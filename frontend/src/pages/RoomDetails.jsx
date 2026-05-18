@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import api from "../api/api";
+import ChatBox from "../components/ChatBox";
 
 const RoomDetails = () => {
   const { id } = useParams();
   const [room, setRoom] = useState(null);
+  const [onlineUsers, setOnlineUsers] = useState([]);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
@@ -35,6 +37,23 @@ const RoomDetails = () => {
       isMounted = false;
     };
   }, [id]);
+
+  const handleOnlineUsersChange = useCallback((users) => {
+    setOnlineUsers(users);
+  }, []);
+
+  const handleParticipantsChange = useCallback((participants) => {
+    setRoom((currentRoom) => {
+      if (!currentRoom) {
+        return currentRoom;
+      }
+
+      return {
+        ...currentRoom,
+        members: participants,
+      };
+    });
+  }, []);
 
   if (isLoading) {
     return <p className="text-slate-600">Loading room...</p>;
@@ -91,15 +110,30 @@ const RoomDetails = () => {
 
       <div className="mt-6 grid gap-4 lg:grid-cols-[280px_1fr]">
         <aside className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="font-semibold">Participants</h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-semibold">Participants</h2>
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
+              {onlineUsers.length} online
+            </span>
+          </div>
           <div className="mt-4 space-y-3">
             {room.members?.length ? (
-              room.members.map((member) => (
-                <div key={member._id} className="rounded-md bg-slate-50 px-3 py-2">
-                  <p className="text-sm font-medium">{member.name}</p>
-                  <p className="text-xs capitalize text-slate-500">{member.role}</p>
-                </div>
-              ))
+              room.members.map((member) => {
+                const memberId = member._id || member.id;
+                const isOnline = onlineUsers.some((onlineUser) => onlineUser.id === memberId);
+
+                return (
+                  <div key={memberId} className="rounded-md bg-slate-50 px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-sm font-medium">{member.name}</p>
+                      {isOnline && (
+                        <span className="h-2 w-2 rounded-full bg-emerald-500" aria-label="Online" />
+                      )}
+                    </div>
+                    <p className="text-xs capitalize text-slate-500">{member.role}</p>
+                  </div>
+                );
+              })
             ) : (
               <p className="text-sm text-slate-600">Participants will appear here.</p>
             )}
@@ -107,12 +141,11 @@ const RoomDetails = () => {
         </aside>
 
         <div className="grid gap-4">
-          <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="font-semibold">Chat</h2>
-            <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm text-slate-600">
-              Chat messages will appear here after Socket.IO is added.
-            </div>
-          </section>
+          <ChatBox
+            roomId={room._id}
+            onOnlineUsersChange={handleOnlineUsersChange}
+            onParticipantsChange={handleParticipantsChange}
+          />
 
           <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
             <h2 className="font-semibold">Video call</h2>
