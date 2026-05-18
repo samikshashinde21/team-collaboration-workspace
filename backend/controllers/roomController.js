@@ -3,7 +3,7 @@ const ActivityLog = require("../models/ActivityLog");
 
 const createRoom = async (req, res) => {
   try {
-    const { name, description } = req.body;
+    const { name, description, isLocked } = req.body;
 
     if (!name) {
       return res.status(400).json({ message: "Room name is required" });
@@ -12,6 +12,7 @@ const createRoom = async (req, res) => {
     const room = await Room.create({
       name,
       description,
+      isLocked: Boolean(isLocked),
       createdBy: req.user._id,
       members: [req.user._id],
     });
@@ -46,6 +47,22 @@ const getRooms = async (req, res) => {
   }
 };
 
+const getRoomById = async (req, res) => {
+  try {
+    const room = await Room.findById(req.params.id)
+      .populate("createdBy", "name email role")
+      .populate("members", "name email role");
+
+    if (!room) {
+      return res.status(404).json({ message: "Room not found" });
+    }
+
+    res.json(room);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch room", error: error.message });
+  }
+};
+
 const deleteRoom = async (req, res) => {
   try {
     const room = await Room.findById(req.params.id);
@@ -71,5 +88,6 @@ const deleteRoom = async (req, res) => {
 module.exports = {
   createRoom,
   getRooms,
+  getRoomById,
   deleteRoom,
 };
