@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import api from "../api/api";
 import ChatBox from "../components/ChatBox";
+import VideoCall from "../components/VideoCall";
 
 const RoomDetails = () => {
   const { id } = useParams();
@@ -147,12 +148,7 @@ const RoomDetails = () => {
             onParticipantsChange={handleParticipantsChange}
           />
 
-          <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="font-semibold">Video call</h2>
-            <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-sm text-slate-600">
-              Video call controls will appear here after WebRTC is added.
-            </div>
-          </section>
+          <VideoCall roomId={room._id} />
         </div>
       </div>
     </section>

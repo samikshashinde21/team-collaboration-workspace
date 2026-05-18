@@ -4,6 +4,7 @@ const Room = require("../models/Room");
 const User = require("../models/User");
 
 const onlineUsersByRoom = new Map();
+const callUsersByRoom = new Map();
 
 const formatUser = (user) => ({
   id: user._id.toString(),
@@ -50,6 +51,35 @@ const removeSocketFromRoom = (io, socket, roomId) => {
   emitOnlineUsers(io, roomId);
 };
 
+const getCallUsers = (roomId) => {
+  const users = callUsersByRoom.get(roomId);
+
+  return users ? Array.from(users.values()) : [];
+};
+
+const removeSocketFromCall = (io, socket, roomId) => {
+  const callUsers = callUsersByRoom.get(roomId);
+
+  if (!callUsers) {
+    return;
+  }
+
+  const removedUser = callUsers.get(socket.id);
+  callUsers.delete(socket.id);
+
+  if (callUsers.size === 0) {
+    callUsersByRoom.delete(roomId);
+  }
+
+  socket.leave(roomId);
+  socket.to(roomId).emit("call-user-left", {
+    roomId,
+    socketId: socket.id,
+    user: removedUser || formatUser(socket.user),
+    users: getCallUsers(roomId),
+  });
+};
+
 const socketHandler = (io) => {
   io.use(async (socket, next) => {
     try {
@@ -68,6 +98,7 @@ const socketHandler = (io) => {
 
       socket.user = user;
       socket.joinedRooms = new Set();
+      socket.callRooms = new Set();
       next();
     } catch (error) {
       next(new Error("Socket authentication failed"));
@@ -184,9 +215,96 @@ const socketHandler = (io) => {
       });
     });
 
+    socket.on("join-call", ({ roomId }, callback) => {
+      if (!roomId) {
+        return callback?.({ ok: false, message: "Room ID is required" });
+      }
+
+      socket.join(roomId);
+      socket.callRooms.add(roomId);
+
+      if (!callUsersByRoom.has(roomId)) {
+        callUsersByRoom.set(roomId, new Map());
+      }
+
+      const callUser = {
+        socketId: socket.id,
+        ...formatUser(socket.user),
+      };
+      const existingUsers = getCallUsers(roomId);
+
+      if (!callUsersByRoom.get(roomId).has(socket.id) && existingUsers.length >= 2) {
+        socket.leave(roomId);
+        socket.callRooms.delete(roomId);
+        return callback?.({ ok: false, message: "This call already has two participants" });
+      }
+
+      callUsersByRoom.get(roomId).set(socket.id, callUser);
+
+      socket.to(roomId).emit("call-user-joined", {
+        roomId,
+        socketId: socket.id,
+        user: callUser,
+        users: getCallUsers(roomId),
+      });
+
+      callback?.({ ok: true, users: existingUsers });
+    });
+
+    socket.on("leave-call", ({ roomId }) => {
+      if (!roomId) {
+        return;
+      }
+
+      removeSocketFromCall(io, socket, roomId);
+      socket.callRooms.delete(roomId);
+    });
+
+    socket.on("offer", ({ roomId, targetSocketId, offer }) => {
+      if (!roomId || !targetSocketId || !offer) {
+        return;
+      }
+
+      io.to(targetSocketId).emit("offer", {
+        roomId,
+        fromSocketId: socket.id,
+        user: formatUser(socket.user),
+        offer,
+      });
+    });
+
+    socket.on("answer", ({ roomId, targetSocketId, answer }) => {
+      if (!roomId || !targetSocketId || !answer) {
+        return;
+      }
+
+      io.to(targetSocketId).emit("answer", {
+        roomId,
+        fromSocketId: socket.id,
+        user: formatUser(socket.user),
+        answer,
+      });
+    });
+
+    socket.on("ice-candidate", ({ roomId, targetSocketId, candidate }) => {
+      if (!roomId || !targetSocketId || !candidate) {
+        return;
+      }
+
+      io.to(targetSocketId).emit("ice-candidate", {
+        roomId,
+        fromSocketId: socket.id,
+        user: formatUser(socket.user),
+        candidate,
+      });
+    });
+
     socket.on("disconnect", () => {
       socket.joinedRooms.forEach((roomId) => {
         removeSocketFromRoom(io, socket, roomId);
+      });
+      socket.callRooms.forEach((roomId) => {
+        removeSocketFromCall(io, socket, roomId);
       });
 
       console.log("User disconnected:", socket.id);
