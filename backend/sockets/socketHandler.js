@@ -299,6 +299,30 @@ const socketHandler = (io) => {
       });
     });
 
+    socket.on("screen-share-start", ({ roomId }) => {
+      if (!roomId) {
+        return;
+      }
+
+      socket.to(roomId).emit("screen-share-start", {
+        roomId,
+        socketId: socket.id,
+        user: formatUser(socket.user),
+      });
+    });
+
+    socket.on("screen-share-stop", ({ roomId }) => {
+      if (!roomId) {
+        return;
+      }
+
+      socket.to(roomId).emit("screen-share-stop", {
+        roomId,
+        socketId: socket.id,
+        user: formatUser(socket.user),
+      });
+    });
+
     socket.on("disconnect", () => {
       socket.joinedRooms.forEach((roomId) => {
         removeSocketFromRoom(io, socket, roomId);

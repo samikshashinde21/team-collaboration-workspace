@@ -17,12 +17,17 @@ const VideoCall = ({ roomId }) => {
   const peerConnectionRef = useRef(null);
   const localStreamRef = useRef(null);
   const remoteStreamRef = useRef(null);
+  const screenStreamRef = useRef(null);
+  const cameraVideoTrackRef = useRef(null);
   const targetSocketIdRef = useRef(null);
+  const isScreenSharingRef = useRef(false);
   const [localStream, setLocalStream] = useState(null);
   const [remoteStream, setRemoteStream] = useState(null);
   const [isInCall, setIsInCall] = useState(false);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [isMicOn, setIsMicOn] = useState(false);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [isRemoteScreenSharing, setIsRemoteScreenSharing] = useState(false);
   const [remoteUserName, setRemoteUserName] = useState("");
   const [status, setStatus] = useState("Ready to start a two-person call.");
   const [error, setError] = useState("");
