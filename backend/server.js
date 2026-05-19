@@ -7,6 +7,7 @@ const http = require("http");
 const { Server } = require("socket.io");
 
 const connectDB = require("./config/db");
+const activityRoutes = require("./routes/activityRoutes");
 const authRoutes = require("./routes/authRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
 const invitationRoutes = require("./routes/invitationRoutes");
@@ -39,6 +40,7 @@ app.use(
 );
 
 app.use("/api/auth", authRoutes);
+app.use("/api/activity", activityRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/invitations", invitationRoutes);
 app.use("/api/rooms", roomRoutes);

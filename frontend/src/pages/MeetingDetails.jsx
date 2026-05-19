@@ -92,7 +92,7 @@ const MeetingDetails = () => {
   }, []);
 
   const leaveSocketMeeting = useCallback(() => {
-    socketRef.current?.emit("leave-call", { roomId, meetingId });
+    socketRef.current?.emit("leave-meeting", { roomId, meetingId });
     socketRef.current?.disconnect();
     socketRef.current = null;
     resetPeerConnection();
@@ -166,6 +166,10 @@ const MeetingDetails = () => {
         setRemoteUserName(joinedUser?.name || "Remote participant");
         setStatus(`${joinedUser?.name || "A participant"} joined the meeting.`);
         targetSocketIdRef.current = socketId;
+      });
+
+      socket.on("meeting-participants", ({ users }) => {
+        setParticipants(users || []);
       });
 
       socket.on("call-user-left", ({ socketId, users }) => {
@@ -272,7 +276,7 @@ const MeetingDetails = () => {
         registerSocketEvents(socket);
 
         socket.on("connect", () => {
-          socket.emit("join-call", { roomId, meetingId }, async (response) => {
+          socket.emit("join-meeting", { roomId, meetingId }, async (response) => {
             if (!response?.ok) {
               setError(response?.message || "Could not join the meeting.");
               leaveSocketMeeting();

@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const Room = require("../models/Room");
 const RoomInvitation = require("../models/RoomInvitation");
 const User = require("../models/User");
+const { ACTIONS, createActivityLog } = require("../services/activityLogger");
 
 const formatInvitation = (invitation) => ({
   id: invitation._id.toString(),
@@ -97,6 +98,15 @@ const createInvitation = async (req, res) => {
 
     io?.to(`user:${invitedUserId}`).emit("room-invitation", formattedInvitation);
 
+    await createActivityLog({
+      io,
+      actor: req.user._id,
+      targetUser: invitedUserId,
+      room: room._id,
+      action: ACTIONS.INVITATION_SENT,
+      description: `${req.user.name} invited ${invitedUser.name} to ${room.name}`,
+    });
+
     res.status(201).json(formattedInvitation);
   } catch (error) {
     res.status(500).json({ message: "Failed to send invitation", error: error.message });
@@ -168,7 +178,7 @@ const updateInvitation = async (req, res) => {
 
     if (status === "accepted") {
       await Room.findByIdAndUpdate(invitation.room, {
-        $addToSet: { assignedUsers: req.user._id },
+        $addToSet: { assignedUsers: req.user._id, members: req.user._id },
       });
     }
 
@@ -179,6 +189,15 @@ const updateInvitation = async (req, res) => {
     io
       ?.to(`user:${populatedInvitation.invitedBy._id.toString()}`)
       .emit("room-invitation-updated", formattedInvitation);
+
+    await createActivityLog({
+      io,
+      actor: req.user._id,
+      targetUser: populatedInvitation.invitedBy._id,
+      room: populatedInvitation.room._id,
+      action: status === "accepted" ? ACTIONS.INVITATION_ACCEPTED : ACTIONS.INVITATION_REJECTED,
+      description: `${req.user.name} ${status} the invitation to ${populatedInvitation.room.name}`,
+    });
 
     res.json(formattedInvitation);
   } catch (error) {

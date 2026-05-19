@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, useRef } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import api from "../api/api";
+import ActivityTimeline from "../components/ActivityTimeline";
 import ChatBox from "../components/ChatBox";
 import { useAuth } from "../hooks/useAuth";
 import { io } from "socket.io-client";
@@ -16,6 +17,20 @@ const formatMeetingTime = (value) =>
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+
+const formatMeetingDuration = (meeting) => {
+  const seconds =
+    meeting.durationSeconds ??
+    Math.max(
+      Math.floor(((meeting.endedAt ? new Date(meeting.endedAt) : new Date()) - new Date(meeting.startedAt)) / 1000),
+      0
+    );
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+
+  if (minutes < 1) return `${remainingSeconds}s`;
+  return `${minutes}m ${remainingSeconds}s`;
+};
 
 const tabs = [
   { id: "chat", label: "Chat" },
@@ -116,6 +131,7 @@ const RoomDetails = () => {
   const [inviteDescription, setInviteDescription] = useState("");
   const [roomInvitations, setRoomInvitations] = useState([]);
   const [meetings, setMeetings] = useState([]);
+  const [activities, setActivities] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [invitingUserId, setInvitingUserId] = useState("");
@@ -129,14 +145,16 @@ const RoomDetails = () => {
 
     const fetchRoom = async () => {
       try {
-        const [{ data: roomData }, { data: meetingsData }] = await Promise.all([
+        const [{ data: roomData }, { data: meetingsData }, { data: activityData }] = await Promise.all([
           api.get(`/rooms/${id}`),
           api.get(`/rooms/${id}/meetings`),
+          api.get(`/rooms/${id}/activity`),
         ]);
 
         if (isMounted) {
           setRoom(roomData);
           setMeetings(meetingsData);
+          setActivities(activityData);
         }
       } catch (err) {
         if (isMounted) {
@@ -155,6 +173,31 @@ const RoomDetails = () => {
       isMounted = false;
     };
   }, [id]);
+
+  useEffect(() => {
+    if (!token || !id) return undefined;
+
+    const socket = io("http://localhost:5000", { auth: { token } });
+
+    socket.on("connect", () => {
+      socket.emit("subscribe-activity", { roomId: id });
+    });
+
+    socket.on("activity-created", (activity) => {
+      if (activity.room?.id && activity.room.id !== id) {
+        return;
+      }
+
+      setActivities((currentActivities) => [
+        activity,
+        ...currentActivities.filter((item) => item.id !== activity.id),
+      ].slice(0, 50));
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, [id, token]);
 
   useEffect(() => {
     if (!canInvite) {
@@ -295,40 +338,10 @@ const RoomDetails = () => {
   });
 
   const participants = Array.from(participantMap.values());
-  const activeMeeting = meetings.find((meeting) => meeting.status === "active");
+  const activeMeetings = meetings.filter((meeting) => meeting.status === "active");
+  const activeMeeting = activeMeetings[0];
   const endedMeetings = meetings.filter((meeting) => meeting.status === "ended");
   const activeMeetingStatus = activeMeeting ? "Meeting in progress" : "No active meeting";
-  const activityItems = [
-    ...participants.map((member) => {
-      const memberId = member._id || member.id;
-      const isOnline =
-        member.status === "online" || onlineUsers.some((onlineUser) => onlineUser.id === memberId);
-
-      return {
-        id: `presence-${memberId}`,
-        label: `${member.name || "A participant"} is ${isOnline ? "online" : "offline"}`,
-        detail: "Join and leave status",
-        type: isOnline ? "join" : "leave",
-      };
-    }),
-    ...roomInvitations.map((invitation) => ({
-      id: `invitation-${invitation.id}`,
-      label: `${invitation.invitedUser?.name || "A user"} was invited`,
-      detail: `${invitation.status || "pending"} invitation`,
-      type: "invitation",
-    })),
-    ...participants
-      .filter((member) => member.muted || member.screenShareBlocked)
-      .map((member) => ({
-        id: `moderation-${member._id || member.id}`,
-        label: `${member.name || "A participant"} has moderation limits`,
-        detail: [member.muted ? "Muted" : null, member.screenShareBlocked ? "Screen share blocked" : null]
-          .filter(Boolean)
-          .join(", "),
-        type: "moderation",
-      })),
-  ];
-
   const handleStartMeeting = async () => {
     setIsStartingMeeting(true);
     setError("");
@@ -426,6 +439,26 @@ const RoomDetails = () => {
         </dl>
       </div>
 
+
+      {activeMeeting && (
+        <div className="mt-6 rounded-lg border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-emerald-900">Active meeting in progress</p>
+              <p className="mt-1 text-sm text-emerald-700">
+                Started by {activeMeeting.startedBy?.name || "Unknown"} at {formatMeetingTime(activeMeeting.startedAt)}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate(`/rooms/${room._id}/meeting/${activeMeeting.id}`)}
+              className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-800"
+            >
+              Join Meeting
+            </button>
+          </div>
+        </div>
+      )}
       {isInviteOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4">
           <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl">
@@ -686,16 +719,39 @@ const RoomDetails = () => {
                 <div className="grid gap-4 xl:grid-cols-2">
                   <div className="rounded-lg border border-slate-200 p-4">
                     <div className="flex items-center justify-between gap-3">
-                      <h3 className="font-semibold text-slate-900">Scheduled meetings</h3>
+                      <h3 className="font-semibold text-slate-900">Active meetings</h3>
                       <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
-                        {activeMeeting ? "1 active" : "0 upcoming"}
+                        {activeMeetings.length} active
                       </span>
                     </div>
-                    <div className="mt-4 rounded-md border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center">
-                      <p className="text-sm font-medium text-slate-700">{activeMeeting ? "Active meeting" : "No scheduled meetings"}</p>
-                      <p className="mt-1 text-sm text-slate-500">
-                        {activeMeeting ? `Started ${formatMeetingTime(activeMeeting.startedAt)}` : "Upcoming room meetings will appear here."}
-                      </p>
+                    <div className="mt-4 space-y-3">
+                      {activeMeetings.length ? (
+                        activeMeetings.map((meeting) => (
+                          <div key={meeting.id} className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-3">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                              <div>
+                                <p className="text-sm font-medium text-slate-900">Started by {meeting.startedBy?.name || "Unknown"}</p>
+                                <p className="mt-1 text-xs text-slate-600">{formatMeetingTime(meeting.startedAt)}</p>
+                                <p className="mt-1 text-xs text-slate-600">
+                                  {meeting.activeParticipantCount ?? meeting.participantCount ?? meeting.participants?.length ?? 0} participants - {formatMeetingDuration(meeting)}
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => navigate(`/rooms/${room._id}/meeting/${meeting.id}`)}
+                                className="rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-800"
+                              >
+                                Join
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center">
+                          <p className="text-sm font-medium text-slate-700">No active meetings</p>
+                          <p className="mt-1 text-sm text-slate-500">Start a meeting when the room is ready.</p>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -712,8 +768,11 @@ const RoomDetails = () => {
                           <div key={meeting.id} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
                             <p className="text-sm font-medium text-slate-900">Started by {meeting.startedBy?.name || "Unknown"}</p>
                             <p className="mt-1 text-xs text-slate-500">
-                              {formatMeetingTime(meeting.startedAt)}
-                              {meeting.endedAt ? ` - ${formatMeetingTime(meeting.endedAt)}` : ""}
+                              Started {formatMeetingTime(meeting.startedAt)}
+                              {meeting.endedAt ? ` - ended ${formatMeetingTime(meeting.endedAt)}` : ""}
+                            </p>
+                            <p className="mt-1 text-xs text-slate-500">
+                              {meeting.participantCount ?? meeting.participants?.length ?? 0} participants - {formatMeetingDuration(meeting)}
                             </p>
                           </div>
                         ))
@@ -739,40 +798,12 @@ const RoomDetails = () => {
                     </p>
                   </div>
                   <span className="w-fit rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
-                    {activityItems.length} events
+                    {activities.length} events
                   </span>
                 </div>
 
-                <div className="mt-5 space-y-3">
-                  {activityItems.length ? (
-                    activityItems.map((item) => (
-                      <div
-                        key={item.id}
-                        className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3"
-                      >
-                        <span
-                          className={`mt-1 h-2.5 w-2.5 rounded-full ${
-                            item.type === "join"
-                              ? "bg-emerald-500"
-                              : item.type === "leave"
-                                ? "bg-slate-400"
-                                : item.type === "invitation"
-                                  ? "bg-sky-500"
-                                  : "bg-amber-500"
-                          }`}
-                        />
-                        <div className="min-w-0 flex-1">
-                          <p className="text-sm font-medium text-slate-900">{item.label}</p>
-                          <p className="mt-1 text-sm text-slate-500">{item.detail}</p>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center">
-                      <p className="text-sm font-medium text-slate-700">No activity yet</p>
-                      <p className="mt-1 text-sm text-slate-500">Room activity will appear here.</p>
-                    </div>
-                  )}
+                <div className="mt-5">
+                  <ActivityTimeline activities={activities} emptyTitle="No room activity yet" />
                 </div>
               </section>
             )}

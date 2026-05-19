@@ -2,7 +2,12 @@ const mongoose = require("mongoose");
 
 const activityLogSchema = new mongoose.Schema(
   {
-    user: {
+    actor: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    targetUser: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
@@ -10,15 +15,24 @@ const activityLogSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Room",
     },
+    meeting: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Meeting",
+    },
     action: {
       type: String,
       required: true,
       trim: true,
     },
-    details: {
+    description: {
       type: String,
       trim: true,
       default: "",
+    },
+    timestamp: {
+      type: Date,
+      default: Date.now,
+      index: true,
     },
   },
   {

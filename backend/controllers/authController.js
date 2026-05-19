@@ -1,6 +1,7 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const { ACTIONS, createActivityLog } = require("../services/activityLogger");
 
 const createToken = (userId) => {
   return jwt.sign({ id: userId }, process.env.JWT_SECRET, {
@@ -76,6 +77,13 @@ const login = async (req, res) => {
     if (!passwordMatches) {
       return res.status(401).json({ message: "Invalid email or password" });
     }
+
+    await createActivityLog({
+      io: req.app.get("io"),
+      actor: user._id,
+      action: ACTIONS.USER_LOGIN,
+      description: `${user.name} logged in`,
+    });
 
     sendAuthResponse(res, 200, user);
   } catch (error) {

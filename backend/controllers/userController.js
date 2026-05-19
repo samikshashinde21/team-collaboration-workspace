@@ -1,5 +1,5 @@
 const User = require("../models/User");
-const ActivityLog = require("../models/ActivityLog");
+const { ACTIONS, createActivityLog } = require("../services/activityLogger");
 
 const getUsers = async (req, res) => {
   try {
@@ -29,10 +29,12 @@ const updateUserRole = async (req, res) => {
     user.role = role;
     await user.save();
 
-    await ActivityLog.create({
-      user: req.user._id,
-      action: "USER_ROLE_UPDATED",
-      details: `${req.user.name} changed ${user.email} to ${role}`,
+    await createActivityLog({
+      io: req.app.get("io"),
+      actor: req.user._id,
+      targetUser: user._id,
+      action: ACTIONS.USER_ROLE_UPDATED,
+      description: `${req.user.name} changed ${user.email} to ${role}`,
     });
 
     res.json({

@@ -4,6 +4,7 @@ const {
   getRooms,
   getRoomById,
   deleteRoom,
+  getRoomActivity,
   getRoomMeetings,
   startMeeting,
   getMeetingById,
@@ -16,6 +17,7 @@ const router = express.Router();
 
 router.post("/", protect, authorizeRoles("admin"), createRoom);
 router.get("/", protect, getRooms);
+router.get("/:id/activity", protect, getRoomActivity);
 router.get("/:id/meetings", protect, getRoomMeetings);
 router.post("/:id/meetings", protect, startMeeting);
 router.get("/:id/meetings/:meetingId", protect, getMeetingById);

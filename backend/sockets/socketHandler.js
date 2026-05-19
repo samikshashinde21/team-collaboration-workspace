@@ -4,6 +4,7 @@ const Meeting = require("../models/Meeting");
 const MeetingMessage = require("../models/MeetingMessage");
 const Room = require("../models/Room");
 const User = require("../models/User");
+const { ACTIONS, createActivityLog } = require("../services/activityLogger");
 const { onlineUsersByRoom, callUsersByRoom } = require("../services/presenceStore");
 const { canAccessRoom } = require("../services/roomAccess");
 
@@ -93,6 +94,10 @@ const emitRoomParticipants = async (io, roomId, room = null) => {
 };
 
 const isModeratorOrAdmin = (user) => user && (user.role === "admin" || user.role === "moderator");
+
+const logActivity = (io, payload) => {
+  createActivityLog({ io, ...payload }).catch(() => {});
+};
 
 const removeUserSocketsFromRoom = (io, roomId, targetUserId) => {
   const roomUsers = onlineUsersByRoom.get(roomId);
@@ -279,6 +284,13 @@ const socketHandler = (io) => {
         socket.emit("room-messages", messages.map(formatMessage));
         emitOnlineUsers(io, roomId);
         await emitRoomParticipants(io, roomId, room);
+        socket.join(`activity:room:${roomId}`);
+        logActivity(io, {
+          actor: socket.user._id,
+          room: roomId,
+          action: ACTIONS.ROOM_JOINED,
+          description: `${socket.user.name} joined ${room.name}`,
+        });
 
         callback?.({ ok: true });
       } catch (error) {
@@ -292,7 +304,17 @@ const socketHandler = (io) => {
       }
 
       await removeSocketFromRoom(io, socket, roomId);
+      const room = await Room.findById(roomId).select("name");
+      if (room) {
+        logActivity(io, {
+          actor: socket.user._id,
+          room: roomId,
+          action: ACTIONS.ROOM_LEFT,
+          description: `${socket.user.name} left ${room.name}`,
+        });
+      }
       socket.joinedRooms.delete(roomId);
+      socket.leave(`activity:room:${roomId}`);
       socket.to(roomId).emit("stop-typing", {
         roomId,
         user: formatUser(socket.user),
@@ -415,7 +437,7 @@ const socketHandler = (io) => {
       });
     });
 
-    socket.on("join-call", async ({ roomId, meetingId = null }, callback) => {
+    const handleJoinMeetingCall = async ({ roomId, meetingId = null }, callback) => {
       if (!roomId) {
         return callback?.({ ok: false, message: "Room ID is required" });
       }
@@ -494,10 +516,16 @@ const socketHandler = (io) => {
         users: getCallUsers(channel),
       });
 
-      callback?.({ ok: true, users: existingUsers });
-    });
+      socket.to(channel).emit("meeting-participants", {
+        roomId,
+        meetingId,
+        users: getCallUsers(channel),
+      });
 
-    socket.on("leave-call", async ({ roomId, meetingId = null }) => {
+      callback?.({ ok: true, users: existingUsers });
+    };
+
+    const handleLeaveMeetingCall = async ({ roomId, meetingId = null }) => {
       if (!roomId) {
         return;
       }
@@ -509,9 +537,50 @@ const socketHandler = (io) => {
         if (callChannel === channel) {
           await removeSocketFromCall(io, socket, callRoom);
           socket.callRooms.delete(callRoom);
+          io.to(channel).emit("meeting-participants", {
+            roomId,
+            meetingId,
+            users: getCallUsers(channel),
+          });
         }
       }
+    };
+
+    socket.on("join-call", handleJoinMeetingCall);
+    socket.on("join-meeting", handleJoinMeetingCall);
+    socket.on("leave-call", handleLeaveMeetingCall);
+    socket.on("leave-meeting", handleLeaveMeetingCall);
+
+    socket.on("subscribe-activity", async ({ roomId = null, meetingId = null } = {}, callback) => {
+      try {
+        socket.join(`activity:user:${socket.user._id.toString()}`);
+
+        if (isModeratorOrAdmin(socket.user)) {
+          socket.join("activity:all");
+        }
+
+        if (roomId) {
+          const room = await findRoomForAccess(roomId);
+
+          if (!room) return callback?.({ ok: false, message: "Room not found" });
+
+          const access = canAccessRoom(socket.user, room);
+
+          if (!access.allowed) return callback?.({ ok: false, message: access.message });
+
+          socket.join(`activity:room:${roomId}`);
+        }
+
+        if (meetingId) {
+          socket.join(`activity:meeting:${meetingId}`);
+        }
+
+        return callback?.({ ok: true });
+      } catch {
+        return callback?.({ ok: false, message: "Could not subscribe to activity" });
+      }
     });
+
     socket.on("offer", ({ roomId, meetingId = null, targetSocketId, offer }) => {
       if (!roomId || !targetSocketId || !offer) {
         return;
@@ -617,6 +686,13 @@ const socketHandler = (io) => {
         io.to(roomId).emit("user-muted", { roomId, userId: targetUserId });
         io.to(`user:${targetUserId}`).emit("force-mute", { roomId });
         await emitRoomParticipants(io, roomId);
+        logActivity(io, {
+          actor: socket.user._id,
+          targetUser: targetUserId,
+          room: roomId,
+          action: ACTIONS.USER_MUTED,
+          description: `${socket.user.name} muted ${targetUser.name}`,
+        });
 
         return callback?.({ ok: true });
       } catch (err) {
@@ -643,6 +719,13 @@ const socketHandler = (io) => {
         io.to(roomId).emit("user-unmuted", { roomId, userId: targetUserId });
         io.to(`user:${targetUserId}`).emit("force-unmute", { roomId });
         await emitRoomParticipants(io, roomId);
+        logActivity(io, {
+          actor: socket.user._id,
+          targetUser: targetUserId,
+          room: roomId,
+          action: ACTIONS.USER_UNMUTED,
+          description: `${socket.user.name} unmuted ${targetUser.name}`,
+        });
 
         return callback?.({ ok: true });
       } catch (err) {
@@ -675,6 +758,13 @@ const socketHandler = (io) => {
 
         io.to(roomId).emit("user-kicked", { roomId, userId: targetUserId });
         await emitRoomParticipants(io, roomId);
+        logActivity(io, {
+          actor: socket.user._id,
+          targetUser: targetUserId,
+          room: roomId,
+          action: ACTIONS.USER_KICKED,
+          description: `${socket.user.name} removed ${targetUser.name} from the room`,
+        });
 
         return callback?.({ ok: true });
       } catch (err) {
@@ -709,6 +799,13 @@ const socketHandler = (io) => {
         io.to(roomId).emit("screen-share-updated", { roomId, userId: targetUserId, allowed: !!allow });
         io.to(`user:${targetUserId}`).emit("screen-share-permission", { roomId, allowed: !!allow });
         await emitRoomParticipants(io, roomId);
+        logActivity(io, {
+          actor: socket.user._id,
+          targetUser: targetUserId,
+          room: roomId,
+          action: allow ? ACTIONS.SCREEN_SHARE_ALLOWED : ACTIONS.SCREEN_SHARE_BLOCKED,
+          description: `${socket.user.name} ${allow ? "allowed" : "blocked"} screen sharing for ${targetUser.name}`,
+        });
 
         return callback?.({ ok: true });
       } catch (err) {

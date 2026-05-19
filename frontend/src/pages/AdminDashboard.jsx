@@ -92,9 +92,9 @@ const AdminDashboard = () => {
             stats.recentActivity.map((activity) => (
               <div key={activity.id} className="py-3">
                 <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="font-medium text-slate-900">{activity.details || activity.action}</p>
-                  <time className="text-sm text-slate-500" dateTime={activity.createdAt}>
-                    {formatActivityTime(activity.createdAt)}
+                  <p className="font-medium text-slate-900">{activity.description || activity.action}</p>
+                  <time className="text-sm text-slate-500" dateTime={activity.timestamp}>
+                    {formatActivityTime(activity.timestamp)}
                   </time>
                 </div>
                 <p className="mt-1 text-sm text-slate-500">

@@ -1,10 +1,11 @@
 const mongoose = require("mongoose");
 const Room = require("../models/Room");
-const ActivityLog = require("../models/ActivityLog");
 const RoomInvitation = require("../models/RoomInvitation");
 const Meeting = require("../models/Meeting");
 const User = require("../models/User");
+const { getRoomActivity } = require("./activityController");
 const { canAccessRoom, validateRoomPermissions } = require("../services/roomAccess");
+const { ACTIONS, createActivityLog } = require("../services/activityLogger");
 
 const formatInvitationNotification = (invitation) => ({
   id: invitation._id.toString(),
@@ -33,35 +34,45 @@ const formatInvitationNotification = (invitation) => ({
 });
 
 
-const formatMeeting = (meeting) => ({
-  id: meeting._id.toString(),
-  room: meeting.room?._id?.toString?.() || meeting.room?.toString?.(),
-  status: meeting.status,
-  startedBy: meeting.startedBy
-    ? {
-        id: meeting.startedBy._id.toString(),
-        name: meeting.startedBy.name,
-        email: meeting.startedBy.email,
-        role: meeting.startedBy.role,
-      }
-    : null,
-  participants: (meeting.participants || []).map((participant) => ({
-    user: participant.user
+const formatMeeting = (meeting) => {
+  const participants = meeting.participants || [];
+  const durationEnd = meeting.endedAt || new Date();
+  const durationMs = meeting.startedAt ? durationEnd.getTime() - meeting.startedAt.getTime() : 0;
+
+  return {
+    id: meeting._id.toString(),
+    room: meeting.room?._id?.toString?.() || meeting.room?.toString?.(),
+    status: meeting.status,
+    startedBy: meeting.startedBy
       ? {
-          id: participant.user._id.toString(),
-          name: participant.user.name,
-          email: participant.user.email,
-          role: participant.user.role,
+          id: meeting.startedBy._id.toString(),
+          name: meeting.startedBy.name,
+          email: meeting.startedBy.email,
+          role: meeting.startedBy.role,
         }
       : null,
-    joinedAt: participant.joinedAt,
-    leftAt: participant.leftAt,
-  })),
-  startedAt: meeting.startedAt,
-  endedAt: meeting.endedAt,
-  createdAt: meeting.createdAt,
-  updatedAt: meeting.updatedAt,
-});
+    participants: participants.map((participant) => ({
+      user: participant.user
+        ? {
+            id: participant.user._id.toString(),
+            name: participant.user.name,
+            email: participant.user.email,
+            role: participant.user.role,
+          }
+        : null,
+      joinedAt: participant.joinedAt,
+      leftAt: participant.leftAt,
+    })),
+    participantCount: participants.length,
+    activeParticipantCount: participants.filter((participant) => !participant.leftAt).length,
+    durationMs: Math.max(durationMs, 0),
+    durationSeconds: Math.max(Math.floor(durationMs / 1000), 0),
+    startedAt: meeting.startedAt,
+    endedAt: meeting.endedAt,
+    createdAt: meeting.createdAt,
+    updatedAt: meeting.updatedAt,
+  };
+};
 
 const populateMeeting = (query) =>
   query
@@ -135,11 +146,12 @@ const createRoom = async (req, res) => {
       members: [req.user._id],
     });
 
-    await ActivityLog.create({
-      user: req.user._id,
+    await createActivityLog({
+      io: req.app.get("io"),
+      actor: req.user._id,
       room: room._id,
-      action: "ROOM_CREATED",
-      details: `${req.user.name} created ${room.name}`,
+      action: ACTIONS.ROOM_CREATED,
+      description: `${req.user.name} created room ${room.name}`,
     });
 
     const invitationUserIds = roomIsOpenToEveryone
@@ -170,6 +182,15 @@ const createRoom = async (req, res) => {
         io
           ?.to(`user:${invitation.invitedUser._id.toString()}`)
           .emit("room-invitation", formatInvitationNotification(invitation));
+
+        createActivityLog({
+          io,
+          actor: req.user._id,
+          targetUser: invitation.invitedUser._id,
+          room: room._id,
+          action: ACTIONS.INVITATION_SENT,
+          description: `${req.user.name} invited ${invitation.invitedUser.name} to ${room.name}`,
+        }).catch(() => {});
       });
     }
 
@@ -229,13 +250,15 @@ const deleteRoom = async (req, res) => {
       return res.status(404).json({ message: "Room not found" });
     }
 
-    await room.deleteOne();
-
-    await ActivityLog.create({
-      user: req.user._id,
-      action: "ROOM_DELETED",
-      details: `${req.user.name} deleted ${room.name}`,
+    await createActivityLog({
+      io: req.app.get("io"),
+      actor: req.user._id,
+      room: room._id,
+      action: ACTIONS.ROOM_DELETED,
+      description: `${req.user.name} deleted room ${room.name}`,
     });
+
+    await room.deleteOne();
 
     res.json({ message: "Room deleted successfully" });
   } catch (error) {
@@ -279,6 +302,15 @@ const startMeeting = async (req, res) => {
     });
 
     const populatedMeeting = await populateMeeting(Meeting.findById(meeting._id));
+
+    await createActivityLog({
+      io: req.app.get("io"),
+      actor: req.user._id,
+      room: room._id,
+      meeting: meeting._id,
+      action: ACTIONS.MEETING_STARTED,
+      description: `${req.user.name} started a meeting in ${room.name}`,
+    });
 
     res.status(201).json(formatMeeting(populatedMeeting));
   } catch (error) {
@@ -341,6 +373,15 @@ const endMeeting = async (req, res) => {
       meeting: formatMeeting(meeting),
     });
 
+    await createActivityLog({
+      io: req.app.get("io"),
+      actor: req.user._id,
+      room: room._id,
+      meeting: meeting._id,
+      action: ACTIONS.MEETING_ENDED,
+      description: `${req.user.name} ended a meeting in ${room.name}`,
+    });
+
     res.json(formatMeeting(meeting));
   } catch (error) {
     res.status(500).json({ message: "Failed to end meeting", error: error.message });
@@ -351,6 +392,7 @@ module.exports = {
   getRooms,
   getRoomById,
   deleteRoom,
+  getRoomActivity,
   getRoomMeetings,
   startMeeting,
   getMeetingById,
