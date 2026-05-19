@@ -6,6 +6,7 @@ import RoleRoute from "./components/RoleRoute";
 import AdminDashboard from "./pages/AdminDashboard";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
+import MeetingDetails from "./pages/MeetingDetails";
 import Register from "./pages/Register";
 import RoomDetails from "./pages/RoomDetails";
 import Rooms from "./pages/Rooms";
@@ -20,6 +21,7 @@ const App = () => {
       </Route>
 
       <Route element={<ProtectedRoute />}>
+        <Route path="/rooms/:roomId/meeting/:meetingId" element={<MeetingDetails />} />
         <Route element={<AppLayout />}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/rooms" element={<Rooms />} />

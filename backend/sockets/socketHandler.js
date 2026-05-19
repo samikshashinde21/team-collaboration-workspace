@@ -1,5 +1,7 @@
 const jwt = require("jsonwebtoken");
 const Message = require("../models/Message");
+const Meeting = require("../models/Meeting");
+const MeetingMessage = require("../models/MeetingMessage");
 const Room = require("../models/Room");
 const User = require("../models/User");
 const { onlineUsersByRoom, callUsersByRoom } = require("../services/presenceStore");
@@ -15,6 +17,15 @@ const formatUser = (user) => ({
 const formatMessage = (message) => ({
   id: message._id.toString(),
   room: message.room.toString(),
+  content: message.content,
+  sender: formatUser(message.sender),
+  createdAt: message.createdAt,
+});
+
+const formatMeetingMessage = (message) => ({
+  id: message._id.toString(),
+  room: message.room.toString(),
+  meeting: message.meeting.toString(),
   content: message.content,
   sender: formatUser(message.sender),
   createdAt: message.createdAt,
@@ -125,14 +136,48 @@ const removeSocketFromRoom = async (io, socket, roomId) => {
   await emitRoomParticipants(io, roomId);
 };
 
-const getCallUsers = (roomId) => {
-  const users = callUsersByRoom.get(roomId);
+const getCallChannel = (roomId, meetingId = null) => (meetingId ? `meeting:${meetingId}` : roomId);
+
+const getCallUsers = (channel) => {
+  const users = callUsersByRoom.get(channel);
 
   return users ? Array.from(users.values()) : [];
 };
 
-const removeSocketFromCall = (io, socket, roomId) => {
-  const callUsers = callUsersByRoom.get(roomId);
+const addMeetingParticipant = async (meetingId, userId) => {
+  if (!meetingId) return;
+
+  const meeting = await Meeting.findById(meetingId).select("participants status");
+
+  if (!meeting || meeting.status !== "active") return;
+
+  const existingParticipant = meeting.participants.find(
+    (participant) => participant.user.toString() === userId.toString()
+  );
+
+  if (existingParticipant) {
+    existingParticipant.leftAt = null;
+  } else {
+    meeting.participants.push({ user: userId, joinedAt: new Date() });
+  }
+
+  await meeting.save();
+};
+
+const markMeetingParticipantLeft = async (meetingId, userId) => {
+  if (!meetingId) return;
+
+  await Meeting.updateOne(
+    { _id: meetingId, "participants.user": userId, "participants.leftAt": null },
+    { $set: { "participants.$.leftAt": new Date() } }
+  );
+};
+
+const removeSocketFromCall = async (io, socket, callRoom) => {
+  const normalizedCallRoom =
+    typeof callRoom === "string" ? { channel: callRoom, roomId: callRoom, meetingId: null } : callRoom;
+  const { channel, roomId, meetingId } = normalizedCallRoom;
+  const callUsers = callUsersByRoom.get(channel);
 
   if (!callUsers) {
     return;
@@ -141,19 +186,27 @@ const removeSocketFromCall = (io, socket, roomId) => {
   const removedUser = callUsers.get(socket.id);
   callUsers.delete(socket.id);
 
-  if (callUsers.size === 0) {
-    callUsersByRoom.delete(roomId);
+  if (meetingId) {
+    const stillPresent = Array.from(callUsers.values()).some((user) => user.id === socket.user._id.toString());
+
+    if (!stillPresent) {
+      await markMeetingParticipantLeft(meetingId, socket.user._id);
+    }
   }
 
-  socket.leave(roomId);
-  socket.to(roomId).emit("call-user-left", {
+  if (callUsers.size === 0) {
+    callUsersByRoom.delete(channel);
+  }
+
+  socket.leave(channel);
+  socket.to(channel).emit("call-user-left", {
     roomId,
+    meetingId,
     socketId: socket.id,
     user: removedUser || formatUser(socket.user),
-    users: getCallUsers(roomId),
+    users: getCallUsers(channel),
   });
 };
-
 const socketHandler = (io) => {
   io.use(async (socket, next) => {
     try {
@@ -296,6 +349,50 @@ const socketHandler = (io) => {
       }
     });
 
+
+    socket.on("meeting-message", async ({ roomId, meetingId, content }, callback) => {
+      try {
+        const trimmedContent = content?.trim();
+
+        if (!roomId || !meetingId || !trimmedContent) {
+          return callback?.({ ok: false, message: "Meeting and message are required" });
+        }
+
+        const room = await findRoomForAccess(roomId);
+
+        if (!room) {
+          return callback?.({ ok: false, message: "Room not found" });
+        }
+
+        const access = canAccessRoom(socket.user, room);
+
+        if (!access.allowed) {
+          return callback?.({ ok: false, message: access.message });
+        }
+
+        const meeting = await Meeting.findOne({ _id: meetingId, room: roomId, status: "active" });
+
+        if (!meeting) {
+          return callback?.({ ok: false, message: "Meeting not found or ended" });
+        }
+
+        const message = await MeetingMessage.create({
+          room: roomId,
+          meeting: meetingId,
+          sender: socket.user._id,
+          content: trimmedContent,
+        });
+
+        const savedMessage = await message.populate("sender", "name email role");
+        const formattedMessage = formatMeetingMessage(savedMessage);
+        const channel = getCallChannel(roomId, meetingId);
+
+        io.to(channel).emit("meeting-message", formattedMessage);
+        callback?.({ ok: true, message: formattedMessage });
+      } catch (error) {
+        callback?.({ ok: false, message: "Could not send meeting message" });
+      }
+    });
     socket.on("typing", ({ roomId }) => {
       if (!roomId) {
         return;
@@ -318,7 +415,7 @@ const socketHandler = (io) => {
       });
     });
 
-    socket.on("join-call", async ({ roomId }, callback) => {
+    socket.on("join-call", async ({ roomId, meetingId = null }, callback) => {
       if (!roomId) {
         return callback?.({ ok: false, message: "Room ID is required" });
       }
@@ -341,47 +438,81 @@ const socketHandler = (io) => {
         return callback?.({ ok: false, message: access.message });
       }
 
-      socket.join(roomId);
-      socket.callRooms.add(roomId);
+      if (meetingId) {
+        const meeting = await Meeting.findOne({ _id: meetingId, room: roomId });
 
-      if (!callUsersByRoom.has(roomId)) {
-        callUsersByRoom.set(roomId, new Map());
+        if (!meeting) {
+          return callback?.({ ok: false, message: "Meeting not found" });
+        }
+
+        if (meeting.status !== "active") {
+          return callback?.({ ok: false, message: "Meeting has ended" });
+        }
+
+        await addMeetingParticipant(meetingId, socket.user._id);
+      }
+
+      const channel = getCallChannel(roomId, meetingId);
+      socket.join(channel);
+      const callRoom = { channel, roomId, meetingId };
+      socket.callRooms.add(callRoom);
+
+      if (!callUsersByRoom.has(channel)) {
+        callUsersByRoom.set(channel, new Map());
       }
 
       const callUser = {
         socketId: socket.id,
         ...formatUser(socket.user),
       };
-      const existingUsers = getCallUsers(roomId);
+      const existingUsers = getCallUsers(channel);
 
-      if (!callUsersByRoom.get(roomId).has(socket.id) && existingUsers.length >= 2) {
-        socket.leave(roomId);
-        socket.callRooms.delete(roomId);
+      if (!meetingId && !callUsersByRoom.get(channel).has(socket.id) && existingUsers.length >= 2) {
+        socket.leave(channel);
+        socket.callRooms.delete(callRoom);
         return callback?.({ ok: false, message: "This call already has two participants" });
       }
 
-      callUsersByRoom.get(roomId).set(socket.id, callUser);
+      callUsersByRoom.get(channel).set(socket.id, callUser);
 
-      socket.to(roomId).emit("call-user-joined", {
+      const meetingMessages = meetingId
+        ? await MeetingMessage.find({ meeting: meetingId })
+            .sort({ createdAt: 1 })
+            .limit(50)
+            .populate("sender", "name email role")
+        : [];
+
+      if (meetingId) {
+        socket.emit("meeting-messages", meetingMessages.map(formatMeetingMessage));
+      }
+
+      socket.to(channel).emit("call-user-joined", {
         roomId,
+        meetingId,
         socketId: socket.id,
         user: callUser,
-        users: getCallUsers(roomId),
+        users: getCallUsers(channel),
       });
 
       callback?.({ ok: true, users: existingUsers });
     });
 
-    socket.on("leave-call", ({ roomId }) => {
+    socket.on("leave-call", async ({ roomId, meetingId = null }) => {
       if (!roomId) {
         return;
       }
 
-      removeSocketFromCall(io, socket, roomId);
-      socket.callRooms.delete(roomId);
-    });
+      const channel = getCallChannel(roomId, meetingId);
+      for (const callRoom of Array.from(socket.callRooms)) {
+        const callChannel = typeof callRoom === "string" ? callRoom : callRoom.channel;
 
-    socket.on("offer", ({ roomId, targetSocketId, offer }) => {
+        if (callChannel === channel) {
+          await removeSocketFromCall(io, socket, callRoom);
+          socket.callRooms.delete(callRoom);
+        }
+      }
+    });
+    socket.on("offer", ({ roomId, meetingId = null, targetSocketId, offer }) => {
       if (!roomId || !targetSocketId || !offer) {
         return;
       }
@@ -390,11 +521,12 @@ const socketHandler = (io) => {
         roomId,
         fromSocketId: socket.id,
         user: formatUser(socket.user),
+        meetingId,
         offer,
       });
     });
 
-    socket.on("answer", ({ roomId, targetSocketId, answer }) => {
+    socket.on("answer", ({ roomId, meetingId = null, targetSocketId, answer }) => {
       if (!roomId || !targetSocketId || !answer) {
         return;
       }
@@ -403,11 +535,12 @@ const socketHandler = (io) => {
         roomId,
         fromSocketId: socket.id,
         user: formatUser(socket.user),
+        meetingId,
         answer,
       });
     });
 
-    socket.on("ice-candidate", ({ roomId, targetSocketId, candidate }) => {
+    socket.on("ice-candidate", ({ roomId, meetingId = null, targetSocketId, candidate }) => {
       if (!roomId || !targetSocketId || !candidate) {
         return;
       }
@@ -416,11 +549,12 @@ const socketHandler = (io) => {
         roomId,
         fromSocketId: socket.id,
         user: formatUser(socket.user),
+        meetingId,
         candidate,
       });
     });
 
-    socket.on("screen-share-start", async ({ roomId }) => {
+    socket.on("screen-share-start", async ({ roomId, meetingId = null }) => {
       if (!roomId) return;
 
       try {
@@ -445,8 +579,9 @@ const socketHandler = (io) => {
           });
         }
 
-        socket.to(roomId).emit("screen-share-start", {
+        socket.to(getCallChannel(roomId, meetingId)).emit("screen-share-start", {
           roomId,
+          meetingId,
           socketId: socket.id,
           user: formatUser(socket.user),
         });
@@ -581,13 +716,14 @@ const socketHandler = (io) => {
       }
     });
 
-    socket.on("screen-share-stop", ({ roomId }) => {
+    socket.on("screen-share-stop", ({ roomId, meetingId = null }) => {
       if (!roomId) {
         return;
       }
 
-      socket.to(roomId).emit("screen-share-stop", {
+      socket.to(getCallChannel(roomId, meetingId)).emit("screen-share-stop", {
         roomId,
+        meetingId,
         socketId: socket.id,
         user: formatUser(socket.user),
       });
@@ -599,9 +735,11 @@ const socketHandler = (io) => {
           removeSocketFromRoom(io, socket, roomId)
         )
       );
-      socket.callRooms.forEach((roomId) => {
-        removeSocketFromCall(io, socket, roomId);
-      });
+      await Promise.all(
+        Array.from(socket.callRooms).map((callRoom) =>
+          removeSocketFromCall(io, socket, callRoom)
+        )
+      );
 
       console.log("User disconnected:", socket.id);
     });

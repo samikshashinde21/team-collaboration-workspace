@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const Room = require("../models/Room");
 const ActivityLog = require("../models/ActivityLog");
 const RoomInvitation = require("../models/RoomInvitation");
+const Meeting = require("../models/Meeting");
 const User = require("../models/User");
 const { canAccessRoom, validateRoomPermissions } = require("../services/roomAccess");
 
@@ -31,6 +32,63 @@ const formatInvitationNotification = (invitation) => ({
   updatedAt: invitation.updatedAt,
 });
 
+
+const formatMeeting = (meeting) => ({
+  id: meeting._id.toString(),
+  room: meeting.room?._id?.toString?.() || meeting.room?.toString?.(),
+  status: meeting.status,
+  startedBy: meeting.startedBy
+    ? {
+        id: meeting.startedBy._id.toString(),
+        name: meeting.startedBy.name,
+        email: meeting.startedBy.email,
+        role: meeting.startedBy.role,
+      }
+    : null,
+  participants: (meeting.participants || []).map((participant) => ({
+    user: participant.user
+      ? {
+          id: participant.user._id.toString(),
+          name: participant.user.name,
+          email: participant.user.email,
+          role: participant.user.role,
+        }
+      : null,
+    joinedAt: participant.joinedAt,
+    leftAt: participant.leftAt,
+  })),
+  startedAt: meeting.startedAt,
+  endedAt: meeting.endedAt,
+  createdAt: meeting.createdAt,
+  updatedAt: meeting.updatedAt,
+});
+
+const populateMeeting = (query) =>
+  query
+    .populate("startedBy", "name email role")
+    .populate("participants.user", "name email role");
+
+const findAccessibleRoom = async (req, roomId) => {
+  if (!mongoose.Types.ObjectId.isValid(roomId)) {
+    return { error: { status: 400, message: "Valid room id is required." } };
+  }
+
+  const room = await Room.findById(roomId)
+    .populate("members", "name email role")
+    .populate("assignedUsers", "name email role");
+
+  if (!room) {
+    return { error: { status: 404, message: "Room not found" } };
+  }
+
+  const access = canAccessRoom(req.user, room);
+
+  if (!access.allowed) {
+    return { error: { status: 403, message: access.message } };
+  }
+
+  return { room };
+};
 const createRoom = async (req, res) => {
   try {
     const {
@@ -185,9 +243,116 @@ const deleteRoom = async (req, res) => {
   }
 };
 
+
+const getRoomMeetings = async (req, res) => {
+  try {
+    const { room, error } = await findAccessibleRoom(req, req.params.id);
+
+    if (error) {
+      return res.status(error.status).json({ message: error.message });
+    }
+
+    const meetings = await populateMeeting(
+      Meeting.find({ room: room._id }).sort({ startedAt: -1 })
+    );
+
+    res.json(meetings.map(formatMeeting));
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch meetings", error: error.message });
+  }
+};
+
+const startMeeting = async (req, res) => {
+  try {
+    const { room, error } = await findAccessibleRoom(req, req.params.id);
+
+    if (error) {
+      return res.status(error.status).json({ message: error.message });
+    }
+
+    const meeting = await Meeting.create({
+      room: room._id,
+      status: "active",
+      startedBy: req.user._id,
+      participants: [{ user: req.user._id, joinedAt: new Date() }],
+      startedAt: new Date(),
+    });
+
+    const populatedMeeting = await populateMeeting(Meeting.findById(meeting._id));
+
+    res.status(201).json(formatMeeting(populatedMeeting));
+  } catch (error) {
+    res.status(500).json({ message: "Failed to start meeting", error: error.message });
+  }
+};
+
+const getMeetingById = async (req, res) => {
+  try {
+    const { room, error } = await findAccessibleRoom(req, req.params.id);
+
+    if (error) {
+      return res.status(error.status).json({ message: error.message });
+    }
+
+    const meeting = await populateMeeting(
+      Meeting.findOne({ _id: req.params.meetingId, room: room._id })
+    );
+
+    if (!meeting) {
+      return res.status(404).json({ message: "Meeting not found" });
+    }
+
+    res.json(formatMeeting(meeting));
+  } catch (error) {
+    res.status(500).json({ message: "Failed to fetch meeting", error: error.message });
+  }
+};
+
+const endMeeting = async (req, res) => {
+  try {
+    const { room, error } = await findAccessibleRoom(req, req.params.id);
+
+    if (error) {
+      return res.status(error.status).json({ message: error.message });
+    }
+
+    const meeting = await populateMeeting(
+      Meeting.findOneAndUpdate(
+        { _id: req.params.meetingId, room: room._id },
+        {
+          status: "ended",
+          endedAt: new Date(),
+          $set: { "participants.$[participant].leftAt": new Date() },
+        },
+        {
+          new: true,
+          arrayFilters: [{ "participant.leftAt": null }],
+        }
+      )
+    );
+
+    if (!meeting) {
+      return res.status(404).json({ message: "Meeting not found" });
+    }
+
+    req.app.get("io")?.to(`meeting:${meeting._id.toString()}`).emit("meeting-ended", {
+      roomId: room._id.toString(),
+      meetingId: meeting._id.toString(),
+      meeting: formatMeeting(meeting),
+    });
+
+    res.json(formatMeeting(meeting));
+  } catch (error) {
+    res.status(500).json({ message: "Failed to end meeting", error: error.message });
+  }
+};
 module.exports = {
   createRoom,
   getRooms,
   getRoomById,
   deleteRoom,
+  getRoomMeetings,
+  startMeeting,
+  getMeetingById,
+  endMeeting,
 };

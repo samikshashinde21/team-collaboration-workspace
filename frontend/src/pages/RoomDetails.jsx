@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState, useRef } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import api from "../api/api";
 import ChatBox from "../components/ChatBox";
-import VideoCall from "../components/VideoCall";
 import { useAuth } from "../hooks/useAuth";
 import { io } from "socket.io-client";
 
@@ -11,6 +10,18 @@ const roleBadgeClass = {
   moderator: "bg-sky-100 text-sky-700",
   user: "bg-slate-100 text-slate-700",
 };
+
+const formatMeetingTime = (value) =>
+  new Intl.DateTimeFormat("en", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+
+const tabs = [
+  { id: "chat", label: "Chat" },
+  { id: "meetings", label: "Meetings" },
+  { id: "activity", label: "Activity" },
+];
 
 const ParticipantModerationMenu = ({ roomId, member, currentUser }) => {
   const socketRef = useRef(null);
@@ -94,6 +105,7 @@ const ParticipantModerationMenu = ({ roomId, member, currentUser }) => {
 
 const RoomDetails = () => {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { user, token } = useAuth();
   const [room, setRoom] = useState(null);
   const [onlineUsers, setOnlineUsers] = useState([]);
@@ -103,9 +115,12 @@ const RoomDetails = () => {
   const [inviteMessage, setInviteMessage] = useState("");
   const [inviteDescription, setInviteDescription] = useState("");
   const [roomInvitations, setRoomInvitations] = useState([]);
+  const [meetings, setMeetings] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [invitingUserId, setInvitingUserId] = useState("");
+  const [activeTab, setActiveTab] = useState("chat");
+  const [isStartingMeeting, setIsStartingMeeting] = useState(false);
 
   const canInvite = user?.role === "admin" || user?.role === "moderator";
 
@@ -114,10 +129,14 @@ const RoomDetails = () => {
 
     const fetchRoom = async () => {
       try {
-        const { data } = await api.get(`/rooms/${id}`);
+        const [{ data: roomData }, { data: meetingsData }] = await Promise.all([
+          api.get(`/rooms/${id}`),
+          api.get(`/rooms/${id}/meetings`),
+        ]);
 
         if (isMounted) {
-          setRoom(data);
+          setRoom(roomData);
+          setMeetings(meetingsData);
         }
       } catch (err) {
         if (isMounted) {
@@ -276,6 +295,60 @@ const RoomDetails = () => {
   });
 
   const participants = Array.from(participantMap.values());
+  const activeMeeting = meetings.find((meeting) => meeting.status === "active");
+  const endedMeetings = meetings.filter((meeting) => meeting.status === "ended");
+  const activeMeetingStatus = activeMeeting ? "Meeting in progress" : "No active meeting";
+  const activityItems = [
+    ...participants.map((member) => {
+      const memberId = member._id || member.id;
+      const isOnline =
+        member.status === "online" || onlineUsers.some((onlineUser) => onlineUser.id === memberId);
+
+      return {
+        id: `presence-${memberId}`,
+        label: `${member.name || "A participant"} is ${isOnline ? "online" : "offline"}`,
+        detail: "Join and leave status",
+        type: isOnline ? "join" : "leave",
+      };
+    }),
+    ...roomInvitations.map((invitation) => ({
+      id: `invitation-${invitation.id}`,
+      label: `${invitation.invitedUser?.name || "A user"} was invited`,
+      detail: `${invitation.status || "pending"} invitation`,
+      type: "invitation",
+    })),
+    ...participants
+      .filter((member) => member.muted || member.screenShareBlocked)
+      .map((member) => ({
+        id: `moderation-${member._id || member.id}`,
+        label: `${member.name || "A participant"} has moderation limits`,
+        detail: [member.muted ? "Muted" : null, member.screenShareBlocked ? "Screen share blocked" : null]
+          .filter(Boolean)
+          .join(", "),
+        type: "moderation",
+      })),
+  ];
+
+  const handleStartMeeting = async () => {
+    setIsStartingMeeting(true);
+    setError("");
+
+    try {
+      if (activeMeeting) {
+        navigate(`/rooms/${room._id}/meeting/${activeMeeting.id}`);
+        return;
+      }
+
+      const { data } = await api.post(`/rooms/${room._id}/meetings`);
+      setMeetings((currentMeetings) => [data, ...currentMeetings]);
+      navigate(`/rooms/${room._id}/meeting/${data.id}`);
+    } catch (err) {
+      setError(err.response?.data?.message || "Could not start meeting.");
+      setActiveTab("meetings");
+    } finally {
+      setIsStartingMeeting(false);
+    }
+  };
 
   return (
     <section>
@@ -284,29 +357,56 @@ const RoomDetails = () => {
       </Link>
 
       <div className="mt-6 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
           <div>
             <p className="text-sm font-medium uppercase tracking-wide text-slate-500">Room</p>
             <h1 className="mt-2 text-3xl font-semibold">{room.name}</h1>
             <p className="mt-3 max-w-2xl text-slate-600">{room.description || "No description"}</p>
-          </div>
-          <div className="flex w-fit flex-wrap gap-2">
-            <span
-              className={`rounded-full px-3 py-1 text-sm font-medium ${
-                isOpenRoom ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
-              }`}
-            >
-              {isOpenRoom ? "Open Room" : "Restricted Room"}
-            </span>
-            {canInvite && (
-              <button
-                type="button"
-                onClick={() => setIsInviteOpen(true)}
-                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
+
+            <div className="mt-4 flex w-fit flex-wrap gap-2">
+              <span
+                className={`rounded-full px-3 py-1 text-sm font-medium ${
+                  isOpenRoom ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+                }`}
               >
-                Invite Users
-              </button>
-            )}
+                {isOpenRoom ? "Open Room" : "Restricted Room"}
+              </span>
+              {canInvite && (
+                <button
+                  type="button"
+                  onClick={() => setIsInviteOpen(true)}
+                  className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                >
+                  Invite Users
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Meeting</p>
+                <p className="mt-1 text-sm font-semibold text-slate-900">{activeMeetingStatus}</p>
+              </div>
+              <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-600 ring-1 ring-slate-200">
+                Workspace
+              </span>
+            </div>
+            <div className="mt-4 rounded-md bg-white px-3 py-2 ring-1 ring-slate-200">
+              <p className="text-xs text-slate-500">Next scheduled meeting</p>
+              <p className="mt-1 text-sm font-medium text-slate-900">
+                {activeMeeting ? `Started ${formatMeetingTime(activeMeeting.startedAt)}` : "No meetings scheduled"}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleStartMeeting}
+              disabled={isStartingMeeting}
+              className="mt-4 w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+            >
+              {isStartingMeeting ? "Starting..." : activeMeeting ? "Join Meeting" : "Start Meeting"}
+            </button>
           </div>
         </div>
 
@@ -537,15 +637,147 @@ const RoomDetails = () => {
           )}
         </aside>
 
-        <div className="grid gap-4">
-          <ChatBox
-            roomId={room._id}
-            onOnlineUsersChange={handleOnlineUsersChange}
-            onParticipantsChange={handleParticipantsChange}
-          />
+        <main className="min-w-0 rounded-lg border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-200 px-5 pt-5">
+            <div className="flex flex-wrap gap-2">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`rounded-t-md px-4 py-2 text-sm font-medium transition ${
+                    activeTab === tab.id
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
-          <VideoCall roomId={room._id} />
-        </div>
+          <div className="p-5">
+            {activeTab === "chat" && (
+              <ChatBox
+                roomId={room._id}
+                onOnlineUsersChange={handleOnlineUsersChange}
+                onParticipantsChange={handleParticipantsChange}
+              />
+            )}
+
+            {activeTab === "meetings" && (
+              <section className="space-y-5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h2 className="text-lg font-semibold text-slate-900">Meetings</h2>
+                    <p className="mt-1 text-sm text-slate-500">Plan and review room meetings.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleStartMeeting}
+                    disabled={isStartingMeeting}
+                    className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+                  >
+                    {isStartingMeeting ? "Starting..." : activeMeeting ? "Join Meeting" : "Start Meeting"}
+                  </button>
+                </div>
+
+                <div className="grid gap-4 xl:grid-cols-2">
+                  <div className="rounded-lg border border-slate-200 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="font-semibold text-slate-900">Scheduled meetings</h3>
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                        {activeMeeting ? "1 active" : "0 upcoming"}
+                      </span>
+                    </div>
+                    <div className="mt-4 rounded-md border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center">
+                      <p className="text-sm font-medium text-slate-700">{activeMeeting ? "Active meeting" : "No scheduled meetings"}</p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        {activeMeeting ? `Started ${formatMeetingTime(activeMeeting.startedAt)}` : "Upcoming room meetings will appear here."}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-lg border border-slate-200 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="font-semibold text-slate-900">Meeting history</h3>
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                        {endedMeetings.length} past
+                      </span>
+                    </div>
+                    <div className="mt-4 space-y-3">
+                      {endedMeetings.length ? (
+                        endedMeetings.map((meeting) => (
+                          <div key={meeting.id} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                            <p className="text-sm font-medium text-slate-900">Started by {meeting.startedBy?.name || "Unknown"}</p>
+                            <p className="mt-1 text-xs text-slate-500">
+                              {formatMeetingTime(meeting.startedAt)}
+                              {meeting.endedAt ? ` - ${formatMeetingTime(meeting.endedAt)}` : ""}
+                            </p>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center">
+                          <p className="text-sm font-medium text-slate-700">No meeting history</p>
+                          <p className="mt-1 text-sm text-slate-500">Completed meetings will appear here.</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {activeTab === "activity" && (
+              <section>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h2 className="text-lg font-semibold text-slate-900">Activity</h2>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Room events, presence, invitations, and moderation updates.
+                    </p>
+                  </div>
+                  <span className="w-fit rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                    {activityItems.length} events
+                  </span>
+                </div>
+
+                <div className="mt-5 space-y-3">
+                  {activityItems.length ? (
+                    activityItems.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3"
+                      >
+                        <span
+                          className={`mt-1 h-2.5 w-2.5 rounded-full ${
+                            item.type === "join"
+                              ? "bg-emerald-500"
+                              : item.type === "leave"
+                                ? "bg-slate-400"
+                                : item.type === "invitation"
+                                  ? "bg-sky-500"
+                                  : "bg-amber-500"
+                          }`}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium text-slate-900">{item.label}</p>
+                          <p className="mt-1 text-sm text-slate-500">{item.detail}</p>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center">
+                      <p className="text-sm font-medium text-slate-700">No activity yet</p>
+                      <p className="mt-1 text-sm text-slate-500">Room activity will appear here.</p>
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
+          </div>
+        </main>
       </div>
     </section>
   );
