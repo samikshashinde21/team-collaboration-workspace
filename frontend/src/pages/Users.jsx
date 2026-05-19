@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Shield, UsersRound } from "lucide-react";
 import api from "../api/api";
 
 const roles = ["admin", "moderator", "user"];
@@ -40,10 +41,13 @@ const Users = () => {
   };
 
   return (
-    <section>
-      <div className="mb-6">
-        <p className="text-sm font-medium uppercase tracking-wide text-slate-500">Admin</p>
-        <h1 className="mt-2 text-3xl font-semibold">Users</h1>
+    <section className="space-y-6">
+      <div className="page-hero">
+        <p className="section-kicker">Admin</p>
+        <h1 className="mt-2 flex items-center gap-3 text-4xl font-black text-navy-900">
+          <UsersRound className="h-9 w-9 text-lavender-500" />
+          Users
+        </h1>
         <p className="mt-2 text-slate-600">Review users and assign roles.</p>
       </div>
 
@@ -59,23 +63,25 @@ const Users = () => {
         </div>
       )}
 
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="premium-card overflow-hidden">
         {isLoading ? (
           <p className="p-5 text-slate-600">Loading users...</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-left text-sm">
-              <thead className="border-b border-slate-200 bg-slate-50 text-slate-600">
+              <thead className="border-b border-violet-100 bg-lavender-200/20 text-slate-600">
                 <tr>
                   <th className="px-4 py-3 font-medium">Name</th>
                   <th className="px-4 py-3 font-medium">Email</th>
-                  <th className="px-4 py-3 font-medium">Role</th>
+                  <th className="px-4 py-3 font-medium">
+                    <span className="inline-flex items-center gap-2"><Shield className="h-4 w-4" /> Role</span>
+                  </th>
                   <th className="px-4 py-3 font-medium">Change role</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
                 {users.map((user) => (
-                  <tr key={user._id}>
+                  <tr key={user._id} className="transition hover:bg-white/70">
                     <td className="px-4 py-3 font-medium text-slate-900">{user.name}</td>
                     <td className="px-4 py-3 text-slate-600">{user.email}</td>
                     <td className="px-4 py-3 capitalize text-slate-600">{user.role}</td>
@@ -83,7 +89,7 @@ const Users = () => {
                       <select
                         value={user.role}
                         onChange={(event) => updateRole(user._id, event.target.value)}
-                        className="rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-slate-900"
+                        className="rounded-xl border border-violet-100 bg-white/80 px-3 py-2 outline-none transition focus:border-lavender-500 focus:ring-4 focus:ring-lavender-200/40"
                       >
                         {roles.map((role) => (
                           <option key={role} value={role}>

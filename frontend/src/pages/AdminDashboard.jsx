@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Activity, BarChart3, PhoneCall, Shield, Users, Video } from "lucide-react";
 import { Link } from "react-router-dom";
 import api from "../api/api";
 
@@ -43,17 +44,17 @@ const AdminDashboard = () => {
   }, []);
 
   const statCards = [
-    { label: "Total Users", value: stats?.totalUsers ?? 0 },
-    { label: "Active Rooms", value: stats?.totalRooms ?? 0 },
-    { label: "Online Users", value: stats?.onlineUsersCount ?? 0 },
-    { label: "Active Calls", value: stats?.activeCallsCount ?? 0 },
+    { label: "Total Users", value: stats?.totalUsers ?? 0, icon: Users },
+    { label: "Active Rooms", value: stats?.totalRooms ?? 0, icon: Video },
+    { label: "Online Users", value: stats?.onlineUsersCount ?? 0, icon: Activity },
+    { label: "Active Calls", value: stats?.activeCallsCount ?? 0, icon: PhoneCall },
   ];
 
   return (
-    <section>
-      <div className="mb-6">
-        <p className="text-sm font-medium uppercase tracking-wide text-slate-500">Admin</p>
-        <h1 className="mt-2 text-3xl font-semibold">Admin dashboard</h1>
+    <section className="space-y-6">
+      <div className="page-hero">
+        <p className="section-kicker">Admin</p>
+        <h1 className="mt-2 text-4xl font-black text-navy-900">Admin dashboard</h1>
         <p className="mt-2 text-slate-600">Admin-only area for platform controls.</p>
       </div>
 
@@ -63,24 +64,32 @@ const AdminDashboard = () => {
         </div>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {statCards.map((card) => (
-          <div key={card.label} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-sm font-medium text-slate-500">{card.label}</p>
-            <p className="mt-3 text-3xl font-semibold text-slate-900">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {statCards.map((card) => {
+          const Icon = card.icon;
+          return (
+          <div key={card.label} className="premium-card p-5">
+            <span className="icon-chip mb-4">
+              <Icon className="h-5 w-5" />
+            </span>
+            <p className="text-sm font-semibold text-slate-500">{card.label}</p>
+            <p className="mt-3 text-3xl font-black text-navy-900">
               {isLoading ? "..." : card.value}
             </p>
           </div>
-        ))}
+        )})}
       </div>
 
-      <div className="mt-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="soft-panel p-5">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h2 className="font-semibold">Recent activity</h2>
+            <h2 className="inline-flex items-center gap-2 font-black text-navy-900">
+              <Activity className="h-4 w-4" />
+              Recent activity
+            </h2>
             <p className="mt-1 text-sm text-slate-500">Latest platform changes</p>
           </div>
-          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
+          <span className="status-pill">
             Latest 5
           </span>
         </div>
@@ -110,9 +119,12 @@ const AdminDashboard = () => {
 
       <Link
         to="/admin/users"
-        className="mt-6 block rounded-lg border border-slate-200 bg-white p-5 shadow-sm hover:border-slate-400"
+        className="premium-card block p-5"
       >
-        <h2 className="font-semibold">Manage users</h2>
+        <h2 className="inline-flex items-center gap-2 font-black text-navy-900">
+          <Shield className="h-4 w-4" />
+          Manage users
+        </h2>
         <p className="mt-2 text-sm text-slate-600">View users and update roles.</p>
       </Link>
     </section>

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Bell, LayoutDashboard, LogOut, Shield, Sparkles, Users, Video } from "lucide-react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
 import api from "../api/api";
@@ -199,29 +200,36 @@ const AppLayout = () => {
   const totalUnread = unreadCounts.total || 0;
 
   const linkClass = ({ isActive }) =>
-    `rounded-md px-3 py-2 text-sm font-medium transition ${
+    `inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition ${
       isActive
-        ? "bg-slate-900 text-white"
-        : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+        ? "bg-navy-900 text-white shadow-soft"
+        : "text-slate-600 hover:bg-white/75 hover:text-navy-900"
     }`;
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-950">
-      <header className="border-b border-slate-200 bg-white">
+    <div className="app-surface min-h-screen">
+      <div className="floating-shape left-6 top-24 h-24 w-40 rotate-6 animate-float" />
+      <div className="floating-shape right-10 top-40 hidden h-28 w-28 -rotate-12 md:block" />
+      <header className="app-content sticky top-0 z-40 border-b border-white/60 bg-white/55 backdrop-blur-2xl">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <Link to="/dashboard" className="text-xl font-semibold">
+          <Link to="/dashboard" className="inline-flex items-center gap-2 text-xl font-black text-navy-900">
+            <span className="icon-chip h-9 w-9 rounded-xl">
+              <Sparkles className="h-5 w-5" />
+            </span>
             CollabSpace
           </Link>
 
           <nav className="flex flex-wrap items-center gap-2">
             <NavLink to="/dashboard" className={linkClass}>
+              <LayoutDashboard className="h-4 w-4" />
               Dashboard
             </NavLink>
             <NavLink to="/rooms" className={linkClass}>
               <span className="inline-flex items-center gap-2">
+                <Video className="h-4 w-4" />
                 Rooms
                 {totalUnread > 0 && (
-                  <span className="rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                  <span className="animate-pulseSoft rounded-full bg-mint-500 px-1.5 py-0.5 text-[10px] font-black text-navy-950">
                     {totalUnread}
                   </span>
                 )}
@@ -230,9 +238,11 @@ const AppLayout = () => {
             {user?.role === "admin" && (
               <>
                 <NavLink to="/admin/dashboard" className={linkClass}>
+                  <Shield className="h-4 w-4" />
                   Admin
                 </NavLink>
                 <NavLink to="/admin/users" className={linkClass}>
+                  <Users className="h-4 w-4" />
                   Users
                 </NavLink>
               </>
@@ -244,34 +254,22 @@ const AppLayout = () => {
               <button
                 type="button"
                 onClick={() => setIsNotificationsOpen((isOpen) => !isOpen)}
-                className="relative rounded-md border border-slate-300 p-2 text-slate-700 hover:bg-slate-100"
+                className="relative rounded-xl border border-white/70 bg-white/70 p-2 text-navy-900 shadow-sm transition hover:-translate-y-0.5 hover:shadow-soft"
                 aria-label="Notifications"
               >
-                <svg
-                  aria-hidden="true"
-                  className="h-5 w-5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                  viewBox="0 0 24 24"
-                >
-                  <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 7h18s-3 0-3-7" />
-                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-                </svg>
+                <Bell className="h-5 w-5" />
                 {unreadInvitations.length > 0 && (
-                  <span className="absolute -right-1 -top-1 rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                  <span className="absolute -right-1 -top-1 animate-pulseSoft rounded-full bg-mint-500 px-1.5 py-0.5 text-[10px] font-black text-navy-950">
                     {unreadInvitations.length}
                   </span>
                 )}
               </button>
 
               {isNotificationsOpen && (
-                <div className="absolute right-0 z-50 mt-2 w-80 rounded-lg border border-slate-200 bg-white p-4 shadow-xl">
+                <div className="absolute right-0 z-50 mt-3 w-80 rounded-2xl border border-white/70 bg-white/90 p-4 shadow-lift backdrop-blur-2xl">
                   <div className="flex items-center justify-between gap-3">
-                    <h2 className="font-semibold">Invitations</h2>
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                    <h2 className="font-bold text-navy-900">Invitations</h2>
+                    <span className="status-pill">
                       {unreadInvitations.length} unread
                     </span>
                   </div>
@@ -302,11 +300,11 @@ const AppLayout = () => {
                                 openInvitationRoom(invitation);
                               }
                             }}
-                            className={`rounded-md border p-3 text-left ${
-                              isUnread ? "border-slate-900 bg-slate-50" : "border-slate-200"
+                            className={`rounded-2xl border p-3 text-left transition ${
+                              isUnread ? "border-lavender-500 bg-lavender-200/25 shadow-soft" : "border-violet-100 bg-white/70"
                             } ${
                               canOpenRoom
-                                ? "cursor-pointer hover:border-slate-400"
+                                ? "cursor-pointer hover:-translate-y-0.5 hover:border-lavender-500 hover:shadow-soft"
                                 : "cursor-default"
                             }`}
                           >
@@ -347,7 +345,7 @@ const AppLayout = () => {
                                   event.stopPropagation();
                                   updateInvitationStatus(invitation.id, "accepted");
                                 }}
-                                className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
+                              className="btn-primary px-3 py-1.5 text-xs"
                               >
                                 Accept
                               </button>
@@ -357,7 +355,7 @@ const AppLayout = () => {
                                   event.stopPropagation();
                                   updateInvitationStatus(invitation.id, "rejected");
                                 }}
-                                className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+                                className="btn-secondary px-3 py-1.5 text-xs"
                               >
                                 Reject
                               </button>
@@ -399,15 +397,16 @@ const AppLayout = () => {
             <button
               type="button"
               onClick={handleLogout}
-              className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+              className="btn-secondary px-3"
             >
+              <LogOut className="h-4 w-4" />
               Logout
             </button>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-8">
+      <main className="app-content mx-auto max-w-6xl px-4 py-8">
         <Outlet />
       </main>
     </div>

@@ -37,8 +37,9 @@ const getReference = (activity) => {
 const ActivityTimeline = ({ activities, emptyTitle = "No activity yet", compact = false }) => {
   if (!activities.length) {
     return (
-      <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center">
-        <p className="text-sm font-medium text-slate-700">{emptyTitle}</p>
+      <div className="rounded-2xl border border-dashed border-lavender-200 bg-white/55 px-4 py-8 text-center shadow-sm backdrop-blur">
+        <Activity className="mx-auto mb-3 h-8 w-8 text-lavender-500" />
+        <p className="text-sm font-bold text-navy-900">{emptyTitle}</p>
         <p className="mt-1 text-sm text-slate-500">New workspace events will appear here.</p>
       </div>
     );
@@ -49,25 +50,28 @@ const ActivityTimeline = ({ activities, emptyTitle = "No activity yet", compact 
       {activities.map((activity) => (
         <article
           key={activity.id}
-          className="relative rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm"
+          className="premium-card relative px-4 py-3"
         >
           <div className="flex items-start gap-3">
-            <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-slate-900" />
+            <span className="mt-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-lavender-200 to-mint-300 text-navy-900">
+              <Activity className="h-4 w-4" />
+            </span>
             <div className="min-w-0 flex-1">
               <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm font-semibold text-slate-900">
+                <p className="text-sm font-bold text-navy-900">
                   {activity.actor?.name || "Unknown user"}
                   <span className="font-medium text-slate-600">
                     {" "}
                     {actionLabels[activity.action] || activity.action}
                   </span>
                 </p>
-                <time className="shrink-0 text-xs text-slate-500" dateTime={activity.timestamp}>
+                <time className="inline-flex shrink-0 items-center gap-1 text-xs text-slate-500" dateTime={activity.timestamp}>
+                  <Clock3 className="h-3.5 w-3.5" />
                   {formatDateTime(activity.timestamp)}
                 </time>
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
+                <span className="status-pill px-2 py-0.5">
                   {getReference(activity)}
                 </span>
                 {activity.targetUser && <span>Target: {activity.targetUser.name}</span>}
@@ -84,3 +88,4 @@ const ActivityTimeline = ({ activities, emptyTitle = "No activity yet", compact 
 };
 
 export default ActivityTimeline;
+import { Activity, Clock3 } from "lucide-react";

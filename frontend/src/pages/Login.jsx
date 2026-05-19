@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { LogIn, Mail, LockKeyhole } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../hooks/useAuth";
 
@@ -33,10 +34,14 @@ const Login = () => {
   };
 
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+    <section className="premium-card overflow-hidden p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold">Welcome back</h1>
-        <p className="mt-2 text-sm text-slate-600">Login to continue to your workspace.</p>
+        <div className="icon-chip mb-4">
+          <LogIn className="h-5 w-5" />
+        </div>
+        <p className="section-kicker">Secure workspace</p>
+        <h1 className="mt-2 text-3xl font-black text-navy-900">Welcome back</h1>
+        <p className="mt-2 text-sm text-slate-600">Login to continue to your collaboration hub.</p>
       </div>
 
       {error && (
@@ -47,7 +52,8 @@ const Login = () => {
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label htmlFor="email" className="block text-sm font-medium text-slate-700">
+          <label htmlFor="email" className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+            <Mail className="h-4 w-4 text-lavender-500" />
             Email
           </label>
           <input
@@ -57,12 +63,13 @@ const Login = () => {
             value={formData.email}
             onChange={handleChange}
             required
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-slate-900"
+            className="field-input"
           />
         </div>
 
         <div>
-          <label htmlFor="password" className="block text-sm font-medium text-slate-700">
+          <label htmlFor="password" className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+            <LockKeyhole className="h-4 w-4 text-lavender-500" />
             Password
           </label>
           <input
@@ -72,22 +79,23 @@ const Login = () => {
             value={formData.password}
             onChange={handleChange}
             required
-            className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-slate-900"
+            className="field-input"
           />
         </div>
 
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full rounded-md bg-slate-900 px-4 py-2 font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+          className="btn-primary w-full"
         >
+          <LogIn className="h-4 w-4" />
           {isSubmitting ? "Logging in..." : "Login"}
         </button>
       </form>
 
       <p className="mt-6 text-center text-sm text-slate-600">
         New here?{" "}
-        <Link to="/register" className="font-medium text-slate-950 underline">
+        <Link to="/register" className="font-bold text-lavender-500">
           Create an account
         </Link>
       </p>

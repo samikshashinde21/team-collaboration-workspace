@@ -1,4 +1,16 @@
 import { useCallback, useEffect, useState, useRef } from "react";
+import {
+  Activity,
+  CalendarClock,
+  ChevronLeft,
+  DoorOpen,
+  MessageSquare,
+  MicOff,
+  MonitorUp,
+  Send,
+  Users,
+  Video,
+} from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import api from "../api/api";
 import ActivityTimeline from "../components/ActivityTimeline";
@@ -384,49 +396,52 @@ const RoomDetails = () => {
   };
 
   return (
-    <section>
-      <Link to="/rooms" className="text-sm font-medium text-slate-600 underline">
+    <section className="space-y-6">
+      <Link to="/rooms" className="inline-flex items-center gap-2 text-sm font-bold text-navy-900 hover:text-lavender-500">
+        <ChevronLeft className="h-4 w-4" />
         Back to rooms
       </Link>
 
-      <div className="mt-6 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+      <div className="page-hero">
         <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
           <div>
-            <p className="text-sm font-medium uppercase tracking-wide text-slate-500">Room</p>
-            <h1 className="mt-2 text-3xl font-semibold">{room.name}</h1>
+            <p className="section-kicker">Room</p>
+            <h1 className="mt-2 text-4xl font-black text-navy-900">{room.name}</h1>
             <p className="mt-3 max-w-2xl text-slate-600">{room.description || "No description"}</p>
 
             <div className="mt-4 flex w-fit flex-wrap gap-2">
               <span
-                className={`rounded-full px-3 py-1 text-sm font-medium ${
-                  isOpenRoom ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+                className={`status-pill ${
+                  isOpenRoom ? "bg-mint-300/35 text-emerald-800" : "bg-lavender-200/50 text-navy-900"
                 }`}
               >
+                <DoorOpen className="h-3.5 w-3.5" />
                 {isOpenRoom ? "Open Room" : "Restricted Room"}
               </span>
               {canInvite && (
                 <button
                   type="button"
                   onClick={() => setIsInviteOpen(true)}
-                  className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                  className="btn-secondary py-1.5"
                 >
+                  <Send className="h-4 w-4" />
                   Invite Users
                 </button>
               )}
             </div>
           </div>
 
-          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <div className="glass-panel p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Meeting</p>
-                <p className="mt-1 text-sm font-semibold text-slate-900">{activeMeetingStatus}</p>
+                <p className="section-kicker">Meeting</p>
+                <p className="mt-1 text-sm font-bold text-navy-900">{activeMeetingStatus}</p>
               </div>
-              <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-600 ring-1 ring-slate-200">
+              <span className="status-pill">
                 Workspace
               </span>
             </div>
-            <div className="mt-4 rounded-md bg-white px-3 py-2 ring-1 ring-slate-200">
+            <div className="mt-4 rounded-2xl bg-white/75 px-3 py-2 ring-1 ring-white/70">
               <p className="text-xs text-slate-500">Next scheduled meeting</p>
               <p className="mt-1 text-sm font-medium text-slate-900">
                 {activeMeeting ? `Started ${formatMeetingTime(activeMeeting.startedAt)}` : "No meetings scheduled"}
@@ -436,23 +451,24 @@ const RoomDetails = () => {
               type="button"
               onClick={handleStartMeeting}
               disabled={isStartingMeeting}
-              className="mt-4 w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+              className="btn-primary mt-4 w-full"
             >
+              <Video className="h-4 w-4" />
               {isStartingMeeting ? "Starting..." : activeMeeting ? "Join Meeting" : "Start Meeting"}
             </button>
           </div>
         </div>
 
         <dl className="mt-6 grid gap-4 sm:grid-cols-3">
-          <div className="rounded-lg bg-slate-50 p-4">
+          <div className="glass-panel p-4">
             <dt className="text-sm text-slate-500">Created by</dt>
             <dd className="mt-1 font-semibold">{room.createdBy?.name || "Unknown"}</dd>
           </div>
-          <div className="rounded-lg bg-slate-50 p-4">
+          <div className="glass-panel p-4">
             <dt className="text-sm text-slate-500">Members</dt>
             <dd className="mt-1 font-semibold">{room.members?.length || 0}</dd>
           </div>
-          <div className="rounded-lg bg-slate-50 p-4">
+          <div className="glass-panel p-4">
             <dt className="text-sm text-slate-500">Room ID</dt>
             <dd className="mt-1 truncate font-semibold">{room._id}</dd>
           </div>
@@ -518,7 +534,7 @@ const RoomDetails = () => {
                 onChange={(event) => setInviteDescription(event.target.value)}
                 rows="3"
                 placeholder={room.description || "Add context for this invitation"}
-                className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900"
+                className="field-input"
               />
             </div>
 
@@ -539,7 +555,7 @@ const RoomDetails = () => {
                   return (
                     <div
                       key={member._id}
-                      className="flex items-center gap-3 rounded-md border border-slate-200 px-3 py-2"
+                      className="flex items-center gap-3 rounded-2xl border border-white/70 bg-white/70 px-3 py-2 shadow-sm"
                     >
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-slate-900">{member.name}</p>
@@ -556,7 +572,7 @@ const RoomDetails = () => {
                         type="button"
                         disabled={isDisabled}
                         onClick={() => handleInviteUser(member._id)}
-                        className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                        className="btn-primary px-3 py-1.5 text-xs disabled:bg-slate-300"
                       >
                         {alwaysHasAccess
                           ? "Always access"
@@ -581,11 +597,14 @@ const RoomDetails = () => {
         </div>
       )}
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-[280px_1fr]">
-        <aside className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
+        <aside className="soft-panel p-5">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="font-semibold">Participants</h2>
-            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
+            <h2 className="inline-flex items-center gap-2 font-black text-navy-900">
+              <Users className="h-4 w-4" />
+              Participants
+            </h2>
+            <span className="status-pill">
               {participants.length} total
             </span>
           </div>
@@ -601,7 +620,7 @@ const RoomDetails = () => {
                 return (
                   <div
                     key={memberId}
-                    className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2"
+                    className="rounded-2xl border border-white/70 bg-white/65 px-3 py-2 shadow-sm"
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
@@ -610,12 +629,14 @@ const RoomDetails = () => {
                       </div>
                       <div className="flex items-center gap-2">
                         {member.muted && (
-                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">
+                            <MicOff className="h-3 w-3" />
                             Muted
                           </span>
                         )}
                         {member.screenShareBlocked && (
-                          <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-xs font-bold text-rose-700">
+                            <MonitorUp className="h-3 w-3" />
                             Screen blocked
                           </span>
                         )}
@@ -690,8 +711,8 @@ const RoomDetails = () => {
           )}
         </aside>
 
-        <main className="min-w-0 rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 px-5 pt-5">
+        <main className="soft-panel min-w-0 overflow-hidden">
+          <div className="border-b border-white/70 px-5 pt-5">
             <div className="flex flex-wrap gap-2">
               {tabs.map((tab) => (
                 <button
@@ -700,10 +721,13 @@ const RoomDetails = () => {
                   onClick={() => setActiveTab(tab.id)}
                   className={`rounded-t-md px-4 py-2 text-sm font-medium transition ${
                     activeTab === tab.id
-                      ? "bg-slate-900 text-white"
-                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                      ? "bg-navy-900 text-white shadow-soft"
+                      : "text-slate-600 hover:bg-white/70 hover:text-navy-900"
                   }`}
                 >
+                  {tab.id === "chat" && <MessageSquare className="mr-2 inline h-4 w-4" />}
+                  {tab.id === "meetings" && <CalendarClock className="mr-2 inline h-4 w-4" />}
+                  {tab.id === "activity" && <Activity className="mr-2 inline h-4 w-4" />}
                   {tab.label}
                 </button>
               ))}
@@ -723,21 +747,22 @@ const RoomDetails = () => {
               <section className="space-y-5">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <h2 className="text-lg font-semibold text-slate-900">Meetings</h2>
+                    <h2 className="text-lg font-black text-navy-900">Meetings</h2>
                     <p className="mt-1 text-sm text-slate-500">Plan and review room meetings.</p>
                   </div>
                   <button
                     type="button"
                     onClick={handleStartMeeting}
                     disabled={isStartingMeeting}
-                    className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-400"
+                    className="btn-primary"
                   >
+                    <Video className="h-4 w-4" />
                     {isStartingMeeting ? "Starting..." : activeMeeting ? "Join Meeting" : "Start Meeting"}
                   </button>
                 </div>
 
                 <div className="grid gap-4 xl:grid-cols-2">
-                  <div className="rounded-lg border border-slate-200 p-4">
+                  <div className="glass-panel p-4">
                     <div className="flex items-center justify-between gap-3">
                     <h3 className="font-semibold text-slate-900">Active meetings</h3>
                       <div className="flex items-center gap-2">
@@ -749,13 +774,13 @@ const RoomDetails = () => {
                     <div className="mt-4 space-y-3">
                       {activeMeetings.length ? (
                         activeMeetings.map((meeting) => (
-                          <div key={meeting.id} className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-3">
+                          <div key={meeting.id} className="rounded-2xl border border-mint-300/60 bg-mint-300/20 px-3 py-3 shadow-sm">
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                               <div>
                                 <div className="flex flex-wrap items-center gap-2">
                                   <p className="text-sm font-medium text-slate-900">Started by {meeting.startedBy?.name || "Unknown"}</p>
                                   {(unreadCounts.meetings?.[meeting.id] || 0) > 0 && (
-                                    <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white">
+                                    <span className="animate-pulseSoft rounded-full bg-mint-500 px-2 py-0.5 text-xs font-black text-navy-950">
                                       {unreadCounts.meetings[meeting.id]} unread
                                     </span>
                                   )}
@@ -768,8 +793,9 @@ const RoomDetails = () => {
                               <button
                                 type="button"
                                 onClick={() => navigate(`/rooms/${room._id}/meeting/${meeting.id}`)}
-                                className="rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-800"
+                                className="btn-primary bg-emerald-700 px-3 hover:bg-emerald-800"
                               >
+                                <Video className="h-4 w-4" />
                                 Join
                               </button>
                             </div>
@@ -784,7 +810,7 @@ const RoomDetails = () => {
                     </div>
                   </div>
 
-                  <div className="rounded-lg border border-slate-200 p-4">
+                  <div className="glass-panel p-4">
                     <div className="flex items-center justify-between gap-3">
                       <h3 className="font-semibold text-slate-900">Meeting history</h3>
                       <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
@@ -794,11 +820,11 @@ const RoomDetails = () => {
                     <div className="mt-4 space-y-3">
                       {endedMeetings.length ? (
                         endedMeetings.map((meeting) => (
-                          <div key={meeting.id} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+                          <div key={meeting.id} className="rounded-2xl border border-white/70 bg-white/65 px-3 py-2 shadow-sm">
                             <div className="flex flex-wrap items-center gap-2">
                               <p className="text-sm font-medium text-slate-900">Started by {meeting.startedBy?.name || "Unknown"}</p>
                               {(unreadCounts.meetings?.[meeting.id] || 0) > 0 && (
-                                <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white">
+                                <span className="animate-pulseSoft rounded-full bg-mint-500 px-2 py-0.5 text-xs font-black text-navy-950">
                                   {unreadCounts.meetings[meeting.id]} unread
                                 </span>
                               )}

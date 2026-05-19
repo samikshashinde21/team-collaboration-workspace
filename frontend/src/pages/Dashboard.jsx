@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Activity, BarChart3, Shield, Sparkles, Users, Video } from "lucide-react";
 import { Link } from "react-router-dom";
 import { io } from "socket.io-client";
 import api from "../api/api";
@@ -57,19 +58,39 @@ const Dashboard = () => {
   }, [token]);
 
   return (
-    <section>
-      <div className="mb-8">
-        <p className="text-sm font-medium uppercase tracking-wide text-slate-500">Dashboard</p>
-        <h1 className="mt-2 text-3xl font-semibold">Hello, {user?.name}</h1>
-        <p className="mt-2 max-w-2xl text-slate-600">
-          Your collaboration workspace foundation is ready. Rooms, members, and admin tools are
-          separated so realtime features can plug in cleanly later.
-        </p>
+    <section className="space-y-8">
+      <div className="page-hero">
+        <div className="absolute right-8 top-8 hidden h-24 w-36 rotate-6 rounded-[2rem] bg-mint-300/30 blur-xl md:block" />
+        <div className="max-w-3xl">
+          <p className="section-kicker">Dashboard</p>
+          <h1 className="mt-3 text-4xl font-black tracking-tight text-navy-900 md:text-5xl">
+            Hello, {user?.name}
+          </h1>
+          <p className="mt-3 max-w-2xl text-slate-600">
+            Your team workspace is live, layered, and ready for rooms, meetings, messages, and activity.
+          </p>
+        </div>
+        <div className="mt-6 flex flex-wrap gap-3">
+          <span className="status-pill">
+            <Sparkles className="h-3.5 w-3.5 text-mint-500" />
+            Realtime workspace
+          </span>
+          <span className="status-pill">
+            <Activity className="h-3.5 w-3.5 text-lavender-500" />
+            {activities.length} recent events
+          </span>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <Link to="/rooms" className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="font-semibold">Rooms</h2>
+        <Link to="/rooms" className="premium-card group p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <span className="icon-chip">
+              <Video className="h-5 w-5" />
+            </span>
+            <BarChart3 className="h-5 w-5 text-lavender-500 transition group-hover:translate-x-1" />
+          </div>
+          <h2 className="font-bold text-navy-900">Rooms</h2>
           <p className="mt-2 text-sm text-slate-600">Create and browse collaboration rooms.</p>
         </Link>
 
@@ -77,29 +98,46 @@ const Dashboard = () => {
           <>
             <Link
               to="/admin/dashboard"
-              className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm"
+              className="premium-card group p-5"
             >
-              <h2 className="font-semibold">Admin dashboard</h2>
+              <div className="mb-4 flex items-center justify-between">
+                <span className="icon-chip">
+                  <Shield className="h-5 w-5" />
+                </span>
+                <BarChart3 className="h-5 w-5 text-lavender-500 transition group-hover:translate-x-1" />
+              </div>
+              <h2 className="font-bold text-navy-900">Admin dashboard</h2>
               <p className="mt-2 text-sm text-slate-600">Review admin-only controls.</p>
             </Link>
             <Link
               to="/admin/users"
-              className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm"
+              className="premium-card group p-5"
             >
-              <h2 className="font-semibold">Users</h2>
+              <div className="mb-4 flex items-center justify-between">
+                <span className="icon-chip">
+                  <Users className="h-5 w-5" />
+                </span>
+                <BarChart3 className="h-5 w-5 text-lavender-500 transition group-hover:translate-x-1" />
+              </div>
+              <h2 className="font-bold text-navy-900">Users</h2>
               <p className="mt-2 text-sm text-slate-600">Manage account roles.</p>
             </Link>
           </>
         )}
       </div>
 
-      <section className="mt-8">
+      <section className="soft-panel p-5">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-xl font-semibold text-slate-900">Recent activity</h2>
+            <div className="flex items-center gap-2">
+              <span className="icon-chip h-9 w-9">
+                <Activity className="h-4 w-4" />
+              </span>
+              <h2 className="text-xl font-black text-navy-900">Recent activity</h2>
+            </div>
             <p className="mt-1 text-sm text-slate-500">Latest workspace events you can access.</p>
           </div>
-          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+          <span className="status-pill">
             {activities.length} shown
           </span>
         </div>

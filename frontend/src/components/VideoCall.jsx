@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Camera, CameraOff, Mic, MicOff, PhoneOff, Video } from "lucide-react";
 import { io } from "socket.io-client";
 import { useAuth } from "../hooks/useAuth";
 
@@ -322,10 +323,13 @@ const VideoCall = ({ roomId }) => {
   };
 
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+    <section className="soft-panel p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="font-semibold">Video call</h2>
+          <h2 className="inline-flex items-center gap-2 font-black text-navy-900">
+            <Video className="h-4 w-4 text-lavender-500" />
+            Video call
+          </h2>
           <p className="mt-1 text-sm text-slate-500">{status}</p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -333,8 +337,9 @@ const VideoCall = ({ roomId }) => {
             <button
               type="button"
               onClick={startCall}
-              className="rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
+              className="btn-primary px-3"
             >
+              <Video className="h-4 w-4" />
               Start call
             </button>
           ) : (
@@ -342,25 +347,28 @@ const VideoCall = ({ roomId }) => {
               <button
                 type="button"
                 onClick={toggleCamera}
-                className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                className="btn-secondary px-3"
               >
+                {isCameraOn ? <CameraOff className="h-4 w-4" /> : <Camera className="h-4 w-4" />}
                 {isCameraOn ? "Camera off" : "Camera on"}
               </button>
               <button
                 type="button"
                 onClick={toggleMicrophone}
                 disabled={isMutedFromModerator}
-                className={`rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 ${
+                className={`btn-secondary px-3 ${
                   isMutedFromModerator ? "opacity-50 cursor-not-allowed" : ""
                 }`}
               >
+                {isMicOn ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
                 {isMicOn ? "Mic off" : "Mic on"}
               </button>
               <button
                 type="button"
                 onClick={leaveCall}
-                className="rounded-md border border-red-200 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
+                className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white/70 px-3 py-2 text-sm font-semibold text-red-700 transition hover:-translate-y-0.5 hover:bg-red-50"
               >
+                <PhoneOff className="h-4 w-4" />
                 Leave call
               </button>
             </>
@@ -375,8 +383,8 @@ const VideoCall = ({ roomId }) => {
       )}
 
       <div className="mt-4 grid gap-4 md:grid-cols-2">
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-950">
-          <div className="flex items-center justify-between bg-slate-900 px-3 py-2 text-sm text-white">
+        <div className="overflow-hidden rounded-2xl border border-white/20 bg-navy-950 shadow-lift">
+          <div className="flex items-center justify-between bg-white/10 px-3 py-2 text-sm text-white">
             <span>You</span>
             <span>{isMicOn ? "Mic on" : "Mic off"}</span>
           </div>
@@ -389,8 +397,8 @@ const VideoCall = ({ roomId }) => {
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-slate-950">
-          <div className="flex items-center justify-between bg-slate-900 px-3 py-2 text-sm text-white">
+        <div className="overflow-hidden rounded-2xl border border-white/20 bg-navy-950 shadow-lift">
+          <div className="flex items-center justify-between bg-white/10 px-3 py-2 text-sm text-white">
             <span>{remoteUserName || "Remote participant"}</span>
             <span>{remoteStream ? "Connected" : "Waiting"}</span>
           </div>

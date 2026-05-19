@@ -1,4 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Camera,
+  CameraOff,
+  ChevronLeft,
+  Mic,
+  MicOff,
+  MonitorUp,
+  PhoneOff,
+  SendHorizonal,
+  Users,
+} from "lucide-react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { io } from "socket.io-client";
 import api from "../api/api";
@@ -469,50 +480,58 @@ const MeetingDetails = () => {
   const typingNames = typingUsers.map((typingUser) => typingUser.name);
 
   return (
-    <section className="fixed inset-0 z-50 flex bg-slate-950 text-white">
+    <section className="fixed inset-0 z-50 flex overflow-hidden bg-navy-950 text-white">
+      <div className="pointer-events-none absolute inset-0 bg-soft-grid opacity-20 [background-size:36px_36px]" />
+      <div className="pointer-events-none absolute -left-24 top-10 h-80 w-80 rounded-[5rem] bg-lavender-500/25 blur-3xl" />
+      <div className="pointer-events-none absolute -right-20 bottom-16 h-72 w-72 rounded-[5rem] bg-mint-500/20 blur-3xl" />
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex flex-col gap-3 border-b border-white/10 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+        <header className="relative z-10 flex flex-col gap-3 border-b border-white/10 bg-white/5 px-5 py-4 backdrop-blur-2xl lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
-            <Link to={`/rooms/${roomId}`} className="text-sm font-medium text-slate-300 hover:text-white">
+            <Link to={`/rooms/${roomId}`} className="inline-flex items-center gap-2 text-sm font-semibold text-slate-300 hover:text-white">
+              <ChevronLeft className="h-4 w-4" />
               Back to room
             </Link>
             <h1 className="mt-1 truncate text-xl font-semibold">Meeting room</h1>
             <p className="mt-1 text-sm text-slate-300">{status}</p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="hidden flex-wrap gap-2 lg:flex">
             <button
               type="button"
               onClick={toggleMicrophone}
-              className={`rounded-md px-3 py-2 text-sm font-medium ${
-                isMicOn ? "bg-white text-slate-950" : "bg-slate-800 text-white ring-1 ring-white/10"
+              className={`btn-secondary ${
+                isMicOn ? "bg-white text-navy-950" : "border-white/10 bg-white/10 text-white"
               }`}
             >
+              {isMicOn ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
               {isMicOn ? "Mute" : "Unmute"}
             </button>
             <button
               type="button"
               onClick={toggleCamera}
-              className={`rounded-md px-3 py-2 text-sm font-medium ${
-                isCameraOn ? "bg-white text-slate-950" : "bg-slate-800 text-white ring-1 ring-white/10"
+              className={`btn-secondary ${
+                isCameraOn ? "bg-white text-navy-950" : "border-white/10 bg-white/10 text-white"
               }`}
             >
+              {isCameraOn ? <Camera className="h-4 w-4" /> : <CameraOff className="h-4 w-4" />}
               {isCameraOn ? "Camera off" : "Camera on"}
             </button>
             <button
               type="button"
               onClick={toggleScreenShare}
-              className={`rounded-md px-3 py-2 text-sm font-medium ${
-                isScreenSharing ? "bg-sky-500 text-white" : "bg-slate-800 text-white ring-1 ring-white/10"
+              className={`btn-secondary ${
+                isScreenSharing ? "border-mint-300 bg-mint-300 text-navy-950" : "border-white/10 bg-white/10 text-white"
               }`}
             >
+              <MonitorUp className="h-4 w-4" />
               {isScreenSharing ? "Stop sharing" : "Share screen"}
             </button>
             <button
               type="button"
               onClick={handleLeaveMeeting}
               disabled={isEnding}
-              className="rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:cursor-not-allowed disabled:bg-red-900"
+              className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-soft transition hover:-translate-y-0.5 hover:bg-red-500 disabled:cursor-not-allowed disabled:bg-red-900"
             >
+              <PhoneOff className="h-4 w-4" />
               {isEnding ? "Leaving..." : "Leave meeting"}
             </button>
           </div>
@@ -524,12 +543,12 @@ const MeetingDetails = () => {
           </div>
         )}
 
-        <div className="grid min-h-0 flex-1 gap-4 p-5 lg:grid-cols-[1fr_340px]">
+        <div className="relative z-10 grid min-h-0 flex-1 gap-4 p-5 pb-24 lg:grid-cols-[1fr_340px]">
           <div className="grid min-h-0 gap-4 md:grid-cols-2">
-            <div className="overflow-hidden rounded-lg border border-white/10 bg-slate-900">
-              <div className="flex items-center justify-between bg-black/30 px-3 py-2 text-sm text-slate-200">
+            <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/10 shadow-lift backdrop-blur-xl ring-2 ring-mint-300/20">
+              <div className="flex items-center justify-between bg-black/20 px-3 py-2 text-sm text-slate-200">
                 <span>You</span>
-                <span>{isMicOn ? "Mic on" : "Mic off"}</span>
+                <span className="inline-flex items-center gap-1">{isMicOn ? <Mic className="h-3.5 w-3.5" /> : <MicOff className="h-3.5 w-3.5" />}{isMicOn ? "Mic on" : "Mic off"}</span>
               </div>
               <div className="grid aspect-video place-items-center bg-black">
                 {localStream ? (
@@ -540,7 +559,7 @@ const MeetingDetails = () => {
               </div>
             </div>
 
-            <div className="overflow-hidden rounded-lg border border-white/10 bg-slate-900">
+            <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/10 shadow-lift backdrop-blur-xl">
               <div className="flex items-center justify-between bg-black/30 px-3 py-2 text-sm text-slate-200">
                 <span>{remoteUserName || "Remote participant"}</span>
                 <span>{remoteStream ? "Connected" : "Waiting"}</span>
@@ -557,18 +576,21 @@ const MeetingDetails = () => {
             </div>
           </div>
 
-          <aside className="flex min-h-0 flex-col rounded-lg border border-white/10 bg-white text-slate-950">
+          <aside className="flex min-h-0 flex-col rounded-2xl border border-white/25 bg-white/90 text-slate-950 shadow-lift backdrop-blur-2xl">
             <div className="border-b border-slate-200 p-4">
               <div className="flex items-center justify-between gap-3">
-                <h2 className="font-semibold">Participants</h2>
-                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
+                <h2 className="inline-flex items-center gap-2 font-black text-navy-900">
+                  <Users className="h-4 w-4" />
+                  Participants
+                </h2>
+                <span className="status-pill">
                   {Math.max(activeParticipants.length, meeting?.participants?.length || 0)} total
                 </span>
               </div>
               <div className="mt-3 space-y-2">
                 {(activeParticipants.length ? activeParticipants : meeting?.participants?.map((item) => item.user) || []).map(
                   (participant) => (
-                    <div key={participant.id} className="rounded-md bg-slate-50 px-3 py-2">
+                    <div key={participant.id} className="rounded-2xl border border-violet-100 bg-gradient-to-br from-white to-lavender-200/20 px-3 py-2 shadow-sm">
                       <p className="truncate text-sm font-medium text-slate-900">{participant.name}</p>
                       <p className="truncate text-xs text-slate-500 capitalize">{participant.role || "participant"}</p>
                     </div>
@@ -578,8 +600,8 @@ const MeetingDetails = () => {
             </div>
 
             <div className="flex min-h-0 flex-1 flex-col p-4">
-              <h2 className="font-semibold">Meeting chat</h2>
-              <div className="mt-3 flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <h2 className="font-black text-navy-900">Meeting chat</h2>
+              <div className="mt-3 flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto rounded-2xl border border-violet-100 bg-gradient-to-br from-white/80 to-lavender-200/20 p-3">
                 {messages.length ? (
                   messages.map((message) => {
                     const isMine = message.sender?.id === user?.id;
@@ -587,8 +609,8 @@ const MeetingDetails = () => {
                     return (
                       <div key={message.id} className={isMine ? "text-right" : "text-left"}>
                         <div
-                          className={`inline-block max-w-[88%] rounded-lg px-3 py-2 ${
-                            isMine ? "bg-slate-900 text-white" : "bg-white text-slate-900"
+                          className={`inline-block max-w-[88%] rounded-2xl px-3 py-2 shadow-sm ${
+                            isMine ? "bg-navy-900 text-white" : "bg-white/95 text-slate-900"
                           }`}
                         >
                           <div className="flex items-center gap-2 text-xs">
@@ -614,21 +636,35 @@ const MeetingDetails = () => {
                   `${typingNames.join(", ")} ${typingNames.length === 1 ? "is" : "are"} typing...`}
               </div>
 
-              <form onSubmit={handleSendMessage} className="mt-3 flex gap-2">
+              <form onSubmit={handleSendMessage} className="mt-3 flex gap-2 rounded-2xl border border-violet-100 bg-white/85 p-2 shadow-soft">
                 <input
                   type="text"
                   value={messageText}
                   onChange={handleMessageTextChange}
                   placeholder="Message meeting"
-                  className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900"
+                  className="min-w-0 flex-1 rounded-xl border border-transparent bg-transparent px-3 py-2 text-sm outline-none focus:border-lavender-200 focus:bg-white"
                 />
-                <button type="submit" className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white">
-                  Send
+                <button type="submit" className="btn-primary px-4">
+                  <SendHorizonal className="h-4 w-4" />
                 </button>
               </form>
             </div>
           </aside>
         </div>
+      </div>
+      <div className="fixed bottom-5 left-1/2 z-20 flex -translate-x-1/2 gap-2 rounded-2xl border border-white/20 bg-white/10 p-2 shadow-lift backdrop-blur-2xl lg:hidden">
+        <button type="button" onClick={toggleMicrophone} className="rounded-xl bg-white/15 p-3 text-white">
+          {isMicOn ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
+        </button>
+        <button type="button" onClick={toggleCamera} className="rounded-xl bg-white/15 p-3 text-white">
+          {isCameraOn ? <Camera className="h-5 w-5" /> : <CameraOff className="h-5 w-5" />}
+        </button>
+        <button type="button" onClick={toggleScreenShare} className="rounded-xl bg-white/15 p-3 text-white">
+          <MonitorUp className="h-5 w-5" />
+        </button>
+        <button type="button" onClick={handleLeaveMeeting} className="rounded-xl bg-red-600 p-3 text-white">
+          <PhoneOff className="h-5 w-5" />
+        </button>
       </div>
     </section>
   );
