@@ -2,9 +2,8 @@ const jwt = require("jsonwebtoken");
 const Message = require("../models/Message");
 const Room = require("../models/Room");
 const User = require("../models/User");
-
-const onlineUsersByRoom = new Map();
-const callUsersByRoom = new Map();
+const { onlineUsersByRoom, callUsersByRoom } = require("../services/presenceStore");
+const { canAccessRoom } = require("../services/roomAccess");
 
 const formatUser = (user) => ({
   id: user._id.toString(),
@@ -24,7 +23,24 @@ const formatMessage = (message) => ({
 const getOnlineUsers = (roomId) => {
   const users = onlineUsersByRoom.get(roomId);
 
-  return users ? Array.from(users.values()) : [];
+  if (!users) {
+    return [];
+  }
+
+  return Array.from(
+    new Map(Array.from(users.values()).map((user) => [user.id, user])).values()
+  );
+};
+
+const getOnlineUserIds = (roomId) => new Set(getOnlineUsers(roomId).map((user) => user.id));
+
+const formatParticipant = (user, onlineUserIds) => {
+  const formattedUser = formatUser(user);
+
+  return {
+    ...formattedUser,
+    status: onlineUserIds.has(formattedUser.id) ? "online" : "offline",
+  };
 };
 
 const emitOnlineUsers = (io, roomId) => {
@@ -34,10 +50,34 @@ const emitOnlineUsers = (io, roomId) => {
   });
 };
 
-const removeSocketFromRoom = (io, socket, roomId) => {
+const findRoomForAccess = (roomId) =>
+  Room.findById(roomId)
+    .populate("members", "name email role")
+    .populate("allowedUsers", "name email role");
+
+const emitRoomParticipants = async (io, roomId, room = null) => {
+  const populatedRoom =
+    room || (await Room.findById(roomId).populate("members", "name email role"));
+
+  if (!populatedRoom) {
+    return;
+  }
+
+  const onlineUserIds = getOnlineUserIds(roomId);
+
+  io.to(roomId).emit("room-participants", {
+    roomId,
+    participants: populatedRoom.members.map((member) =>
+      formatParticipant(member, onlineUserIds)
+    ),
+  });
+};
+
+const removeSocketFromRoom = async (io, socket, roomId) => {
   const roomUsers = onlineUsersByRoom.get(roomId);
 
   if (!roomUsers) {
+    socket.leave(roomId);
     return;
   }
 
@@ -49,6 +89,7 @@ const removeSocketFromRoom = (io, socket, roomId) => {
 
   socket.leave(roomId);
   emitOnlineUsers(io, roomId);
+  await emitRoomParticipants(io, roomId);
 };
 
 const getCallUsers = (roomId) => {
@@ -114,15 +155,25 @@ const socketHandler = (io) => {
           return callback?.({ ok: false, message: "Room ID is required" });
         }
 
+        const existingRoom = await findRoomForAccess(roomId);
+
+        if (!existingRoom) {
+          return callback?.({ ok: false, message: "Room not found" });
+        }
+
+        const access = canAccessRoom(socket.user, existingRoom);
+
+        if (!access.allowed) {
+          return callback?.({ ok: false, message: access.message });
+        }
+
         const room = await Room.findByIdAndUpdate(
           roomId,
           { $addToSet: { members: socket.user._id } },
           { new: true }
-        ).populate("members", "name email role");
-
-        if (!room) {
-          return callback?.({ ok: false, message: "Room not found" });
-        }
+        )
+          .populate("members", "name email role")
+          .populate("allowedUsers", "name email role");
 
         socket.join(roomId);
         socket.joinedRooms.add(roomId);
@@ -139,11 +190,8 @@ const socketHandler = (io) => {
           .populate("sender", "name email role");
 
         socket.emit("room-messages", messages.map(formatMessage));
-        io.to(roomId).emit("room-participants", {
-          roomId,
-          participants: room.members.map(formatUser),
-        });
         emitOnlineUsers(io, roomId);
+        await emitRoomParticipants(io, roomId, room);
 
         callback?.({ ok: true });
       } catch (error) {
@@ -151,12 +199,12 @@ const socketHandler = (io) => {
       }
     });
 
-    socket.on("leave-room", ({ roomId }) => {
+    socket.on("leave-room", async ({ roomId }) => {
       if (!roomId) {
         return;
       }
 
-      removeSocketFromRoom(io, socket, roomId);
+      await removeSocketFromRoom(io, socket, roomId);
       socket.joinedRooms.delete(roomId);
       socket.to(roomId).emit("stop-typing", {
         roomId,
@@ -170,6 +218,18 @@ const socketHandler = (io) => {
 
         if (!roomId || !trimmedContent) {
           return callback?.({ ok: false, message: "Room and message are required" });
+        }
+
+        const room = await findRoomForAccess(roomId);
+
+        if (!room) {
+          return callback?.({ ok: false, message: "Room not found" });
+        }
+
+        const access = canAccessRoom(socket.user, room);
+
+        if (!access.allowed) {
+          return callback?.({ ok: false, message: access.message });
         }
 
         const message = await Message.create({
@@ -215,9 +275,27 @@ const socketHandler = (io) => {
       });
     });
 
-    socket.on("join-call", ({ roomId }, callback) => {
+    socket.on("join-call", async ({ roomId }, callback) => {
       if (!roomId) {
         return callback?.({ ok: false, message: "Room ID is required" });
+      }
+
+      let room;
+
+      try {
+        room = await findRoomForAccess(roomId);
+      } catch {
+        return callback?.({ ok: false, message: "Could not join call" });
+      }
+
+      if (!room) {
+        return callback?.({ ok: false, message: "Room not found" });
+      }
+
+      const access = canAccessRoom(socket.user, room);
+
+      if (!access.allowed) {
+        return callback?.({ ok: false, message: access.message });
       }
 
       socket.join(roomId);
@@ -323,10 +401,12 @@ const socketHandler = (io) => {
       });
     });
 
-    socket.on("disconnect", () => {
-      socket.joinedRooms.forEach((roomId) => {
-        removeSocketFromRoom(io, socket, roomId);
-      });
+    socket.on("disconnect", async () => {
+      await Promise.all(
+        Array.from(socket.joinedRooms).map((roomId) =>
+          removeSocketFromRoom(io, socket, roomId)
+        )
+      );
       socket.callRooms.forEach((roomId) => {
         removeSocketFromCall(io, socket, roomId);
       });

@@ -5,7 +5,7 @@ const authorizeRoles = require("../middleware/roleMiddleware");
 
 const router = express.Router();
 
-router.post("/", protect, authorizeRoles("admin", "moderator"), createRoom);
+router.post("/", protect, authorizeRoles("admin"), createRoom);
 router.get("/", protect, getRooms);
 router.get("/:id", protect, getRoomById);
 router.delete("/:id", protect, authorizeRoles("admin"), deleteRoom);

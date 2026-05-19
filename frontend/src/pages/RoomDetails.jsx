@@ -71,6 +71,8 @@ const RoomDetails = () => {
     );
   }
 
+  const isRoomLocked = Boolean(room.locked ?? room.isLocked);
+
   return (
     <section>
       <Link to="/rooms" className="text-sm font-medium text-slate-600 underline">
@@ -84,13 +86,20 @@ const RoomDetails = () => {
             <h1 className="mt-2 text-3xl font-semibold">{room.name}</h1>
             <p className="mt-3 max-w-2xl text-slate-600">{room.description || "No description"}</p>
           </div>
-          <span
-            className={`w-fit rounded-full px-3 py-1 text-sm font-medium ${
-              room.isLocked ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"
-            }`}
-          >
-            {room.isLocked ? "Locked" : "Unlocked"}
-          </span>
+          <div className="flex w-fit flex-wrap gap-2">
+            {room.isPrivate && (
+              <span className="rounded-full bg-sky-100 px-3 py-1 text-sm font-medium text-sky-800">
+                Private
+              </span>
+            )}
+            <span
+              className={`rounded-full px-3 py-1 text-sm font-medium ${
+                isRoomLocked ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"
+              }`}
+            >
+              {isRoomLocked ? "Locked" : "Unlocked"}
+            </span>
+          </div>
         </div>
 
         <dl className="mt-6 grid gap-4 sm:grid-cols-3">
@@ -114,22 +123,34 @@ const RoomDetails = () => {
           <div className="flex items-center justify-between gap-3">
             <h2 className="font-semibold">Participants</h2>
             <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
-              {onlineUsers.length} online
+              {room.members?.length || 0} total
             </span>
           </div>
+          <p className="mt-1 text-sm text-slate-500">{onlineUsers.length} online now</p>
           <div className="mt-4 space-y-3">
             {room.members?.length ? (
               room.members.map((member) => {
                 const memberId = member._id || member.id;
-                const isOnline = onlineUsers.some((onlineUser) => onlineUser.id === memberId);
+                const isOnline =
+                  member.status === "online" ||
+                  onlineUsers.some((onlineUser) => onlineUser.id === memberId);
 
                 return (
-                  <div key={memberId} className="rounded-md bg-slate-50 px-3 py-2">
+                  <div
+                    key={memberId}
+                    className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2"
+                  >
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-medium">{member.name}</p>
-                      {isOnline && (
-                        <span className="h-2 w-2 rounded-full bg-emerald-500" aria-label="Online" />
-                      )}
+                      <p className="min-w-0 truncate text-sm font-medium">{member.name}</p>
+                      <span
+                        className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
+                          isOnline
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-slate-200 text-slate-600"
+                        }`}
+                      >
+                        {isOnline ? "Online" : "Offline"}
+                      </span>
                     </div>
                     <p className="text-xs capitalize text-slate-500">{member.role}</p>
                   </div>

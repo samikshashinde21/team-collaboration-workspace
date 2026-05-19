@@ -3,17 +3,28 @@ import { Link, useNavigate } from "react-router-dom";
 import api from "../api/api";
 import { useAuth } from "../hooks/useAuth";
 
+const roleOptions = ["admin", "moderator", "user"];
+const emptyRoomForm = {
+  name: "",
+  description: "",
+  isPrivate: false,
+  locked: false,
+  allowedRoles: [],
+  allowedUsers: [],
+};
+
 const Rooms = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [rooms, setRooms] = useState([]);
-  const [formData, setFormData] = useState({ name: "", description: "", isLocked: false });
+  const [users, setUsers] = useState([]);
+  const [formData, setFormData] = useState(emptyRoomForm);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
-  const canCreateRoom = user?.role === "admin" || user?.role === "moderator";
+  const canCreateRoom = user?.role === "admin";
   const canDeleteRoom = user?.role === "admin";
 
   useEffect(() => {
@@ -44,13 +55,60 @@ const Rooms = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (!canCreateRoom) {
+      return undefined;
+    }
+
+    let isMounted = true;
+
+    const fetchUsers = async () => {
+      try {
+        const { data } = await api.get("/users");
+
+        if (isMounted) {
+          setUsers(data);
+        }
+      } catch {
+        if (isMounted) {
+          setUsers([]);
+        }
+      }
+    };
+
+    fetchUsers();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [canCreateRoom]);
+
   const handleChange = (event) => {
     const { name, type, checked, value } = event.target;
 
-    setFormData({
-      ...formData,
+    setFormData((currentFormData) => ({
+      ...currentFormData,
       [name]: type === "checkbox" ? checked : value,
-    });
+      ...(name === "isPrivate" && !checked ? { allowedRoles: [], allowedUsers: [] } : {}),
+    }));
+  };
+
+  const handleAllowedRoleChange = (event) => {
+    const { value, checked } = event.target;
+
+    setFormData((currentFormData) => ({
+      ...currentFormData,
+      allowedRoles: checked
+        ? [...currentFormData.allowedRoles, value]
+        : currentFormData.allowedRoles.filter((role) => role !== value),
+    }));
+  };
+
+  const handleAllowedUsersChange = (event) => {
+    setFormData((currentFormData) => ({
+      ...currentFormData,
+      allowedUsers: Array.from(event.target.selectedOptions, (option) => option.value),
+    }));
   };
 
   const handleCreateRoom = async (event) => {
@@ -61,7 +119,7 @@ const Rooms = () => {
     try {
       const { data } = await api.post("/rooms", formData);
       setRooms([data, ...rooms]);
-      setFormData({ name: "", description: "", isLocked: false });
+      setFormData(emptyRoomForm);
       setIsCreateOpen(false);
     } catch (err) {
       setError(err.response?.data?.message || "Could not create room.");
@@ -83,7 +141,7 @@ const Rooms = () => {
 
   const closeCreateModal = () => {
     setIsCreateOpen(false);
-    setFormData({ name: "", description: "", isLocked: false });
+    setFormData(emptyRoomForm);
   };
 
   return (
@@ -108,7 +166,7 @@ const Rooms = () => {
 
       {!canCreateRoom && (
         <div className="mb-5 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600">
-          You can view and join rooms. Admins and moderators can create new rooms.
+          You can view and join rooms you have access to. Admins can create new rooms.
         </div>
       )}
 
@@ -126,22 +184,32 @@ const Rooms = () => {
         </div>
       ) : (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {rooms.map((room) => (
+          {rooms.map((room) => {
+            const isRoomLocked = Boolean(room.locked ?? room.isLocked);
+
+            return (
             <article key={room._id} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex items-start justify-between gap-3">
-                <div>
+                <div className="min-w-0">
                   <h2 className="text-lg font-semibold">{room.name}</h2>
                   <p className="mt-2 text-sm text-slate-600">{room.description || "No description"}</p>
                 </div>
-                <span
-                  className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${
-                    room.isLocked
-                      ? "bg-amber-100 text-amber-800"
-                      : "bg-emerald-100 text-emerald-800"
-                  }`}
-                >
-                  {room.isLocked ? "Locked" : "Unlocked"}
-                </span>
+                <div className="flex shrink-0 flex-col items-end gap-2">
+                  {room.isPrivate && (
+                    <span className="rounded-full bg-sky-100 px-2.5 py-1 text-xs font-medium text-sky-800">
+                      Private
+                    </span>
+                  )}
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                      isRoomLocked
+                        ? "bg-amber-100 text-amber-800"
+                        : "bg-emerald-100 text-emerald-800"
+                    }`}
+                  >
+                    {isRoomLocked ? "Locked" : "Unlocked"}
+                  </span>
+                </div>
               </div>
 
               <dl className="mt-5 grid grid-cols-2 gap-3 text-sm">
@@ -180,7 +248,8 @@ const Rooms = () => {
                 )}
               </div>
             </article>
-          ))}
+          );
+          })}
         </div>
       )}
 
@@ -231,16 +300,73 @@ const Rooms = () => {
                 />
               </div>
 
-              <label className="flex items-center gap-3 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700">
-                <input
-                  name="isLocked"
-                  type="checkbox"
-                  checked={formData.isLocked}
-                  onChange={handleChange}
-                  className="h-4 w-4 rounded border-slate-300"
-                />
-                Locked room
-              </label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="flex items-center gap-3 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                  <input
+                    name="isPrivate"
+                    type="checkbox"
+                    checked={formData.isPrivate}
+                    onChange={handleChange}
+                    className="h-4 w-4 rounded border-slate-300"
+                  />
+                  Private room
+                </label>
+
+                <label className="flex items-center gap-3 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                  <input
+                    name="locked"
+                    type="checkbox"
+                    checked={formData.locked}
+                    onChange={handleChange}
+                    className="h-4 w-4 rounded border-slate-300"
+                  />
+                  Locked room
+                </label>
+              </div>
+
+              {formData.isPrivate && (
+                <div className="space-y-4 rounded-md border border-slate-200 p-4">
+                  <div>
+                    <p className="text-sm font-medium text-slate-700">Allowed roles</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {roleOptions.map((role) => (
+                        <label
+                          key={role}
+                          className="flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-sm capitalize text-slate-700"
+                        >
+                          <input
+                            type="checkbox"
+                            value={role}
+                            checked={formData.allowedRoles.includes(role)}
+                            onChange={handleAllowedRoleChange}
+                            className="h-4 w-4 rounded border-slate-300"
+                          />
+                          {role}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="allowedUsers" className="block text-sm font-medium text-slate-700">
+                      Assigned users
+                    </label>
+                    <select
+                      id="allowedUsers"
+                      multiple
+                      value={formData.allowedUsers}
+                      onChange={handleAllowedUsersChange}
+                      className="mt-1 h-28 w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-slate-900"
+                    >
+                      {users.map((member) => (
+                        <option key={member._id} value={member._id}>
+                          {member.name} ({member.email})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
 
               <button
                 type="submit"

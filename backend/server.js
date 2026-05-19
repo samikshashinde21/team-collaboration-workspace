@@ -8,6 +8,7 @@ const { Server } = require("socket.io");
 
 const connectDB = require("./config/db");
 const authRoutes = require("./routes/authRoutes");
+const dashboardRoutes = require("./routes/dashboardRoutes");
 const roomRoutes = require("./routes/roomRoutes");
 const userRoutes = require("./routes/userRoutes");
 const socketHandler = require("./sockets/socketHandler");
@@ -37,6 +38,7 @@ app.use(
 );
 
 app.use("/api/auth", authRoutes);
+app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/rooms", roomRoutes);
 app.use("/api/users", userRoutes);
 
