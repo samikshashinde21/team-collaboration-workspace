@@ -21,6 +21,7 @@ const AppLayout = () => {
   const { user, token, logout } = useAuth();
   const navigate = useNavigate();
   const [invitations, setInvitations] = useState([]);
+  const [unreadCounts, setUnreadCounts] = useState({ rooms: {}, meetings: {}, total: 0 });
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [notificationError, setNotificationError] = useState("");
   const notificationsRef = useRef(null);
@@ -33,21 +34,26 @@ const AppLayout = () => {
   useEffect(() => {
     let isMounted = true;
 
-    const fetchInvitations = async () => {
+    const fetchNotifications = async () => {
       try {
-        const { data } = await api.get("/invitations/my");
+        const [{ data: invitationsData }, { data: unreadData }] = await Promise.all([
+          api.get("/invitations/my"),
+          api.get("/unread-counts"),
+        ]);
 
         if (isMounted) {
-          setInvitations(data);
+          setInvitations(invitationsData);
+          setUnreadCounts(unreadData);
         }
       } catch {
         if (isMounted) {
           setInvitations([]);
+          setUnreadCounts({ rooms: {}, meetings: {}, total: 0 });
         }
       }
     };
 
-    fetchInvitations();
+    fetchNotifications();
 
     return () => {
       isMounted = false;
@@ -86,6 +92,11 @@ const AppLayout = () => {
       window.dispatchEvent(
         new CustomEvent("room-invitation-status-updated", { detail: invitation })
       );
+    });
+
+    socket.on("unread-counts-updated", (counts) => {
+      setUnreadCounts(counts);
+      window.dispatchEvent(new CustomEvent("unread-counts-updated", { detail: counts }));
     });
 
     return () => {
@@ -185,6 +196,7 @@ const AppLayout = () => {
         invitation.status !== "pending" &&
         !invitation.inviterRead)
   );
+  const totalUnread = unreadCounts.total || 0;
 
   const linkClass = ({ isActive }) =>
     `rounded-md px-3 py-2 text-sm font-medium transition ${
@@ -206,7 +218,14 @@ const AppLayout = () => {
               Dashboard
             </NavLink>
             <NavLink to="/rooms" className={linkClass}>
-              Rooms
+              <span className="inline-flex items-center gap-2">
+                Rooms
+                {totalUnread > 0 && (
+                  <span className="rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                    {totalUnread}
+                  </span>
+                )}
+              </span>
             </NavLink>
             {user?.role === "admin" && (
               <>

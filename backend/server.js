@@ -12,6 +12,7 @@ const authRoutes = require("./routes/authRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
 const invitationRoutes = require("./routes/invitationRoutes");
 const roomRoutes = require("./routes/roomRoutes");
+const unreadRoutes = require("./routes/unreadRoutes");
 const userRoutes = require("./routes/userRoutes");
 const socketHandler = require("./sockets/socketHandler");
 
@@ -44,6 +45,7 @@ app.use("/api/activity", activityRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/invitations", invitationRoutes);
 app.use("/api/rooms", roomRoutes);
+app.use("/api/unread-counts", unreadRoutes);
 app.use("/api/users", userRoutes);
 
 app.get("/", (req, res) => {

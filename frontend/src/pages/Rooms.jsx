@@ -26,6 +26,7 @@ const Rooms = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [rooms, setRooms] = useState([]);
+  const [unreadCounts, setUnreadCounts] = useState({ rooms: {}, meetings: {}, total: 0 });
   const [users, setUsers] = useState([]);
   const [formData, setFormData] = useState(emptyRoomForm);
   const [error, setError] = useState("");
@@ -49,10 +50,14 @@ const Rooms = () => {
 
     const fetchRooms = async () => {
       try {
-        const { data } = await api.get("/rooms");
+        const [{ data: roomsData }, { data: unreadData }] = await Promise.all([
+          api.get("/rooms"),
+          api.get("/unread-counts"),
+        ]);
 
         if (isMounted) {
-          setRooms(data);
+          setRooms(roomsData);
+          setUnreadCounts(unreadData);
         }
       } catch (err) {
         if (isMounted) {
@@ -69,6 +74,18 @@ const Rooms = () => {
 
     return () => {
       isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleUnreadUpdate = (event) => {
+      setUnreadCounts(event.detail || { rooms: {}, meetings: {}, total: 0 });
+    };
+
+    window.addEventListener("unread-counts-updated", handleUnreadUpdate);
+
+    return () => {
+      window.removeEventListener("unread-counts-updated", handleUnreadUpdate);
     };
   }, []);
 
@@ -215,6 +232,7 @@ const Rooms = () => {
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {rooms.map((room) => {
             const isOpenRoom = room.isOpenToEveryone ?? !room.isPrivate;
+            const unreadCount = unreadCounts.rooms?.[room._id] || 0;
 
             return (
               <article key={room._id} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
@@ -223,13 +241,20 @@ const Rooms = () => {
                     <h2 className="text-lg font-semibold">{room.name}</h2>
                     <p className="mt-2 text-sm text-slate-600">{room.description || "No description"}</p>
                   </div>
-                  <span
-                    className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${
-                      isOpenRoom ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
-                    }`}
-                  >
-                    {isOpenRoom ? "Open Room" : "Restricted Room"}
-                  </span>
+                  <div className="flex shrink-0 flex-col items-end gap-2">
+                    {unreadCount > 0 && (
+                      <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white">
+                        {unreadCount} unread
+                      </span>
+                    )}
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                        isOpenRoom ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+                      }`}
+                    >
+                      {isOpenRoom ? "Open Room" : "Restricted Room"}
+                    </span>
+                  </div>
                 </div>
 
                 <dl className="mt-5 grid grid-cols-2 gap-3 text-sm">

@@ -132,6 +132,7 @@ const RoomDetails = () => {
   const [roomInvitations, setRoomInvitations] = useState([]);
   const [meetings, setMeetings] = useState([]);
   const [activities, setActivities] = useState([]);
+  const [unreadCounts, setUnreadCounts] = useState({ rooms: {}, meetings: {}, total: 0 });
   const [isLoading, setIsLoading] = useState(true);
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [invitingUserId, setInvitingUserId] = useState("");
@@ -145,16 +146,23 @@ const RoomDetails = () => {
 
     const fetchRoom = async () => {
       try {
-        const [{ data: roomData }, { data: meetingsData }, { data: activityData }] = await Promise.all([
+        const [
+          { data: roomData },
+          { data: meetingsData },
+          { data: activityData },
+          { data: unreadData },
+        ] = await Promise.all([
           api.get(`/rooms/${id}`),
           api.get(`/rooms/${id}/meetings`),
           api.get(`/rooms/${id}/activity`),
+          api.get("/unread-counts"),
         ]);
 
         if (isMounted) {
           setRoom(roomData);
           setMeetings(meetingsData);
           setActivities(activityData);
+          setUnreadCounts(unreadData);
         }
       } catch (err) {
         if (isMounted) {
@@ -173,6 +181,18 @@ const RoomDetails = () => {
       isMounted = false;
     };
   }, [id]);
+
+  useEffect(() => {
+    const handleUnreadUpdate = (event) => {
+      setUnreadCounts(event.detail || { rooms: {}, meetings: {}, total: 0 });
+    };
+
+    window.addEventListener("unread-counts-updated", handleUnreadUpdate);
+
+    return () => {
+      window.removeEventListener("unread-counts-updated", handleUnreadUpdate);
+    };
+  }, []);
 
   useEffect(() => {
     if (!token || !id) return undefined;
@@ -719,10 +739,12 @@ const RoomDetails = () => {
                 <div className="grid gap-4 xl:grid-cols-2">
                   <div className="rounded-lg border border-slate-200 p-4">
                     <div className="flex items-center justify-between gap-3">
-                      <h3 className="font-semibold text-slate-900">Active meetings</h3>
-                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
-                        {activeMeetings.length} active
-                      </span>
+                    <h3 className="font-semibold text-slate-900">Active meetings</h3>
+                      <div className="flex items-center gap-2">
+                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                          {activeMeetings.length} active
+                        </span>
+                      </div>
                     </div>
                     <div className="mt-4 space-y-3">
                       {activeMeetings.length ? (
@@ -730,7 +752,14 @@ const RoomDetails = () => {
                           <div key={meeting.id} className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-3">
                             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                               <div>
-                                <p className="text-sm font-medium text-slate-900">Started by {meeting.startedBy?.name || "Unknown"}</p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="text-sm font-medium text-slate-900">Started by {meeting.startedBy?.name || "Unknown"}</p>
+                                  {(unreadCounts.meetings?.[meeting.id] || 0) > 0 && (
+                                    <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white">
+                                      {unreadCounts.meetings[meeting.id]} unread
+                                    </span>
+                                  )}
+                                </div>
                                 <p className="mt-1 text-xs text-slate-600">{formatMeetingTime(meeting.startedAt)}</p>
                                 <p className="mt-1 text-xs text-slate-600">
                                   {meeting.activeParticipantCount ?? meeting.participantCount ?? meeting.participants?.length ?? 0} participants - {formatMeetingDuration(meeting)}
@@ -766,7 +795,14 @@ const RoomDetails = () => {
                       {endedMeetings.length ? (
                         endedMeetings.map((meeting) => (
                           <div key={meeting.id} className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
-                            <p className="text-sm font-medium text-slate-900">Started by {meeting.startedBy?.name || "Unknown"}</p>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-sm font-medium text-slate-900">Started by {meeting.startedBy?.name || "Unknown"}</p>
+                              {(unreadCounts.meetings?.[meeting.id] || 0) > 0 && (
+                                <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white">
+                                  {unreadCounts.meetings[meeting.id]} unread
+                                </span>
+                              )}
+                            </div>
                             <p className="mt-1 text-xs text-slate-500">
                               Started {formatMeetingTime(meeting.startedAt)}
                               {meeting.endedAt ? ` - ended ${formatMeetingTime(meeting.endedAt)}` : ""}

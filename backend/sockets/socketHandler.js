@@ -7,6 +7,12 @@ const User = require("../models/User");
 const { ACTIONS, createActivityLog } = require("../services/activityLogger");
 const { onlineUsersByRoom, callUsersByRoom } = require("../services/presenceStore");
 const { canAccessRoom } = require("../services/roomAccess");
+const {
+  clearUnread,
+  getRoomRecipientIds,
+  getUnreadCounts,
+  incrementUnreadForUsers,
+} = require("../services/unreadService");
 
 const formatUser = (user) => ({
   id: user._id.toString(),
@@ -45,6 +51,8 @@ const getOnlineUsers = (roomId) => {
 };
 
 const getOnlineUserIds = (roomId) => new Set(getOnlineUsers(roomId).map((user) => user.id));
+
+const getActiveRoomViewerIds = (roomId) => getOnlineUserIds(roomId);
 
 const formatParticipant = (user, onlineUserIds) => {
   const formattedUser = formatUser(user);
@@ -149,6 +157,9 @@ const getCallUsers = (channel) => {
   return users ? Array.from(users.values()) : [];
 };
 
+const getActiveMeetingViewerIds = (meetingId) =>
+  new Set(getCallUsers(`meeting:${meetingId}`).map((user) => user.id));
+
 const addMeetingParticipant = async (meetingId, userId) => {
   if (!meetingId) return;
 
@@ -241,6 +252,10 @@ const socketHandler = (io) => {
   io.on("connection", (socket) => {
     console.log("User connected:", socket.id);
 
+    getUnreadCounts(socket.user._id)
+      .then((counts) => socket.emit("unread-counts-updated", counts))
+      .catch(() => {});
+
     socket.on("join-room", async ({ roomId }, callback) => {
       try {
         if (!roomId) {
@@ -284,6 +299,7 @@ const socketHandler = (io) => {
         socket.emit("room-messages", messages.map(formatMessage));
         emitOnlineUsers(io, roomId);
         await emitRoomParticipants(io, roomId, room);
+        await clearUnread({ io, userId: socket.user._id, roomId });
         socket.join(`activity:room:${roomId}`);
         logActivity(io, {
           actor: socket.user._id,
@@ -315,6 +331,11 @@ const socketHandler = (io) => {
       }
       socket.joinedRooms.delete(roomId);
       socket.leave(`activity:room:${roomId}`);
+      socket.to(roomId).emit("typing-stop", {
+        roomId,
+        scope: "room",
+        user: formatUser(socket.user),
+      });
       socket.to(roomId).emit("stop-typing", {
         roomId,
         user: formatUser(socket.user),
@@ -358,8 +379,18 @@ const socketHandler = (io) => {
 
         const savedMessage = await message.populate("sender", "name email role");
         const formattedMessage = formatMessage(savedMessage);
+        const activeViewerIds = getActiveRoomViewerIds(roomId);
+        const recipientIds = (await getRoomRecipientIds(room, socket.user._id)).filter(
+          (userId) => !activeViewerIds.has(userId)
+        );
 
         io.to(roomId).emit("message", formattedMessage);
+        await incrementUnreadForUsers({ io, userIds: recipientIds, roomId });
+        socket.to(roomId).emit("typing-stop", {
+          roomId,
+          scope: "room",
+          user: formatUser(socket.user),
+        });
         socket.to(roomId).emit("stop-typing", {
           roomId,
           user: formatUser(socket.user),
@@ -408,8 +439,19 @@ const socketHandler = (io) => {
         const savedMessage = await message.populate("sender", "name email role");
         const formattedMessage = formatMeetingMessage(savedMessage);
         const channel = getCallChannel(roomId, meetingId);
+        const activeViewerIds = getActiveMeetingViewerIds(meetingId);
+        const recipientIds = meeting.participants
+          .map((participant) => participant.user.toString())
+          .filter((userId) => userId !== socket.user._id.toString() && !activeViewerIds.has(userId));
 
         io.to(channel).emit("meeting-message", formattedMessage);
+        await incrementUnreadForUsers({ io, userIds: recipientIds, roomId, meetingId });
+        socket.to(channel).emit("typing-stop", {
+          roomId,
+          meetingId,
+          scope: "meeting",
+          user: formatUser(socket.user),
+        });
         callback?.({ ok: true, message: formattedMessage });
       } catch (error) {
         callback?.({ ok: false, message: "Could not send meeting message" });
@@ -420,6 +462,15 @@ const socketHandler = (io) => {
         return;
       }
 
+      if (!socket.rooms.has(roomId)) {
+        return;
+      }
+
+      socket.to(roomId).emit("typing-start", {
+        roomId,
+        scope: "room",
+        user: formatUser(socket.user),
+      });
       socket.to(roomId).emit("typing", {
         roomId,
         user: formatUser(socket.user),
@@ -431,8 +482,45 @@ const socketHandler = (io) => {
         return;
       }
 
+      if (!socket.rooms.has(roomId)) {
+        return;
+      }
+
+      socket.to(roomId).emit("typing-stop", {
+        roomId,
+        scope: "room",
+        user: formatUser(socket.user),
+      });
       socket.to(roomId).emit("stop-typing", {
         roomId,
+        user: formatUser(socket.user),
+      });
+    });
+
+    socket.on("typing-start", ({ roomId, meetingId = null }) => {
+      if (!roomId) return;
+
+      const channel = meetingId ? getCallChannel(roomId, meetingId) : roomId;
+      if (!socket.rooms.has(channel)) return;
+
+      socket.to(channel).emit("typing-start", {
+        roomId,
+        meetingId,
+        scope: meetingId ? "meeting" : "room",
+        user: formatUser(socket.user),
+      });
+    });
+
+    socket.on("typing-stop", ({ roomId, meetingId = null }) => {
+      if (!roomId) return;
+
+      const channel = meetingId ? getCallChannel(roomId, meetingId) : roomId;
+      if (!socket.rooms.has(channel)) return;
+
+      socket.to(channel).emit("typing-stop", {
+        roomId,
+        meetingId,
+        scope: meetingId ? "meeting" : "room",
         user: formatUser(socket.user),
       });
     });
@@ -472,6 +560,7 @@ const socketHandler = (io) => {
         }
 
         await addMeetingParticipant(meetingId, socket.user._id);
+        await clearUnread({ io, userId: socket.user._id, roomId, meetingId });
       }
 
       const channel = getCallChannel(roomId, meetingId);

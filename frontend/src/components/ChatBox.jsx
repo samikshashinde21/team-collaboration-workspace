@@ -53,7 +53,7 @@ const ChatBox = ({ roomId, onOnlineUsersChange, onParticipantsChange }) => {
       setMessages((currentMessages) => [...currentMessages, message]);
     });
 
-    socket.on("typing", ({ user: typingUser }) => {
+    const handleTypingStart = ({ user: typingUser }) => {
       setTypingUsers((currentUsers) => {
         if (currentUsers.some((currentUser) => currentUser.id === typingUser.id)) {
           return currentUsers;
@@ -61,13 +61,16 @@ const ChatBox = ({ roomId, onOnlineUsersChange, onParticipantsChange }) => {
 
         return [...currentUsers, typingUser];
       });
-    });
+    };
 
-    socket.on("stop-typing", ({ user: stoppedUser }) => {
+    const handleTypingStop = ({ user: stoppedUser }) => {
       setTypingUsers((currentUsers) =>
         currentUsers.filter((currentUser) => currentUser.id !== stoppedUser.id)
       );
-    });
+    };
+
+    socket.on("typing-start", handleTypingStart);
+    socket.on("typing-stop", handleTypingStop);
 
     socket.on("online-users", ({ users }) => {
       onOnlineUsersChange?.(users);
@@ -106,6 +109,7 @@ const ChatBox = ({ roomId, onOnlineUsersChange, onParticipantsChange }) => {
         clearTimeout(typingTimeoutRef.current);
       }
 
+      socket.emit("typing-stop", { roomId });
       socket.emit("leave-room", { roomId });
       socket.disconnect();
       socketRef.current = null;
@@ -114,14 +118,14 @@ const ChatBox = ({ roomId, onOnlineUsersChange, onParticipantsChange }) => {
 
   const handleChange = (event) => {
     setMessageText(event.target.value);
-    socketRef.current?.emit("typing", { roomId });
+    socketRef.current?.emit("typing-start", { roomId });
 
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
 
     typingTimeoutRef.current = setTimeout(() => {
-      socketRef.current?.emit("stop-typing", { roomId });
+      socketRef.current?.emit("typing-stop", { roomId });
     }, 900);
   };
 
@@ -138,7 +142,7 @@ const ChatBox = ({ roomId, onOnlineUsersChange, onParticipantsChange }) => {
       }
     });
 
-    socketRef.current?.emit("stop-typing", { roomId });
+    socketRef.current?.emit("typing-stop", { roomId });
     setMessageText("");
   };
 
@@ -198,7 +202,8 @@ const ChatBox = ({ roomId, onOnlineUsersChange, onParticipantsChange }) => {
       </div>
 
       <div className="mt-2 min-h-5 text-sm text-slate-500">
-        {typingNames.length > 0 && `${typingNames.join(", ")} typing...`}
+        {typingNames.length > 0 &&
+          `${typingNames.join(", ")} ${typingNames.length === 1 ? "is" : "are"} typing...`}
       </div>
       {isMuted && (
         <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">

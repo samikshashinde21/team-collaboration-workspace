@@ -34,6 +34,7 @@ const MeetingDetails = () => {
   const [participants, setParticipants] = useState([]);
   const [messages, setMessages] = useState([]);
   const [messageText, setMessageText] = useState("");
+  const [typingUsers, setTypingUsers] = useState([]);
   const [isCameraOn, setIsCameraOn] = useState(false);
   const [isMicOn, setIsMicOn] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
@@ -41,6 +42,7 @@ const MeetingDetails = () => {
   const [status, setStatus] = useState("Joining meeting...");
   const [error, setError] = useState("");
   const [isEnding, setIsEnding] = useState(false);
+  const typingTimeoutRef = useRef(null);
 
   useEffect(() => {
     if (localVideoRef.current) {
@@ -92,6 +94,11 @@ const MeetingDetails = () => {
   }, []);
 
   const leaveSocketMeeting = useCallback(() => {
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    socketRef.current?.emit("typing-stop", { roomId, meetingId });
     socketRef.current?.emit("leave-meeting", { roomId, meetingId });
     socketRef.current?.disconnect();
     socketRef.current = null;
@@ -159,6 +166,26 @@ const MeetingDetails = () => {
 
       socket.on("meeting-message", (message) => {
         setMessages((currentMessages) => [...currentMessages, message]);
+      });
+
+      socket.on("typing-start", ({ scope, user: typingUser }) => {
+        if (scope !== "meeting" || !typingUser || typingUser.id === user?.id) return;
+
+        setTypingUsers((currentUsers) => {
+          if (currentUsers.some((currentUser) => currentUser.id === typingUser.id)) {
+            return currentUsers;
+          }
+
+          return [...currentUsers, typingUser];
+        });
+      });
+
+      socket.on("typing-stop", ({ scope, user: stoppedUser }) => {
+        if (scope !== "meeting" || !stoppedUser) return;
+
+        setTypingUsers((currentUsers) =>
+          currentUsers.filter((currentUser) => currentUser.id !== stoppedUser.id)
+        );
       });
 
       socket.on("call-user-joined", ({ user: joinedUser, socketId, users }) => {
@@ -239,7 +266,7 @@ const MeetingDetails = () => {
         navigate(`/rooms/${roomId}`, { replace: true });
       });
     },
-    [createPeerConnection, leaveSocketMeeting, meetingId, navigate, resetPeerConnection, roomId]
+    [createPeerConnection, leaveSocketMeeting, meetingId, navigate, resetPeerConnection, roomId, user?.id]
   );
 
   useEffect(() => {
@@ -406,7 +433,21 @@ const MeetingDetails = () => {
         }
       }
     );
+    socketRef.current?.emit("typing-stop", { roomId, meetingId });
     setMessageText("");
+  };
+
+  const handleMessageTextChange = (event) => {
+    setMessageText(event.target.value);
+    socketRef.current?.emit("typing-start", { roomId, meetingId });
+
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    typingTimeoutRef.current = setTimeout(() => {
+      socketRef.current?.emit("typing-stop", { roomId, meetingId });
+    }, 900);
   };
 
   const handleLeaveMeeting = async () => {
@@ -425,6 +466,7 @@ const MeetingDetails = () => {
   const activeParticipants = participants.filter(
     (participant, index, list) => participant?.id && list.findIndex((item) => item.id === participant.id) === index
   );
+  const typingNames = typingUsers.map((typingUser) => typingUser.name);
 
   return (
     <section className="fixed inset-0 z-50 flex bg-slate-950 text-white">
@@ -567,11 +609,16 @@ const MeetingDetails = () => {
                 )}
               </div>
 
+              <div className="mt-2 min-h-5 text-sm text-slate-500">
+                {typingNames.length > 0 &&
+                  `${typingNames.join(", ")} ${typingNames.length === 1 ? "is" : "are"} typing...`}
+              </div>
+
               <form onSubmit={handleSendMessage} className="mt-3 flex gap-2">
                 <input
                   type="text"
                   value={messageText}
-                  onChange={(event) => setMessageText(event.target.value)}
+                  onChange={handleMessageTextChange}
                   placeholder="Message meeting"
                   className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900"
                 />
