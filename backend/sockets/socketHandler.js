@@ -53,7 +53,7 @@ const emitOnlineUsers = (io, roomId) => {
 const findRoomForAccess = (roomId) =>
   Room.findById(roomId)
     .populate("members", "name email role")
-    .populate("allowedUsers", "name email role");
+    .populate("assignedUsers", "name email role");
 
 const emitRoomParticipants = async (io, roomId, room = null) => {
   const populatedRoom =
@@ -140,6 +140,7 @@ const socketHandler = (io) => {
       socket.user = user;
       socket.joinedRooms = new Set();
       socket.callRooms = new Set();
+      socket.join(`user:${user._id.toString()}`);
       next();
     } catch (error) {
       next(new Error("Socket authentication failed"));
@@ -173,7 +174,7 @@ const socketHandler = (io) => {
           { new: true }
         )
           .populate("members", "name email role")
-          .populate("allowedUsers", "name email role");
+          .populate("assignedUsers", "name email role");
 
         socket.join(roomId);
         socket.joinedRooms.add(roomId);

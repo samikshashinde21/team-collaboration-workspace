@@ -1,61 +1,78 @@
 const mongoose = require("mongoose");
 const Room = require("../models/Room");
 const ActivityLog = require("../models/ActivityLog");
+const RoomInvitation = require("../models/RoomInvitation");
 const User = require("../models/User");
 const { canAccessRoom, validateRoomPermissions } = require("../services/roomAccess");
+
+const formatInvitationNotification = (invitation) => ({
+  id: invitation._id.toString(),
+  room: {
+    id: invitation.room._id.toString(),
+    name: invitation.room.name,
+  },
+  invitedBy: {
+    id: invitation.invitedBy._id.toString(),
+    name: invitation.invitedBy.name,
+    email: invitation.invitedBy.email,
+    role: invitation.invitedBy.role,
+  },
+  invitedUser: {
+    id: invitation.invitedUser._id.toString(),
+    name: invitation.invitedUser.name,
+    email: invitation.invitedUser.email,
+    role: invitation.invitedUser.role,
+  },
+  description: invitation.description,
+  status: invitation.status,
+  invitedUserRead: invitation.invitedUserRead,
+  inviterRead: invitation.inviterRead,
+  createdAt: invitation.createdAt,
+  updatedAt: invitation.updatedAt,
+});
 
 const createRoom = async (req, res) => {
   try {
     const {
       name,
       description,
-      isPrivate = false,
-      allowedUsers = [],
-      allowedRoles = [],
-      locked,
-      isLocked,
+      isOpenToEveryone = true,
+      assignedUsers = [],
     } = req.body;
-    const roomIsPrivate = Boolean(isPrivate);
-    const roomIsLocked = Boolean(locked ?? isLocked);
+    const roomIsOpenToEveryone = Boolean(isOpenToEveryone);
 
     if (!name?.trim()) {
       return res.status(400).json({ message: "Room name is required" });
     }
 
     const validationMessage = validateRoomPermissions({
-      isPrivate: roomIsPrivate,
-      allowedUsers,
-      allowedRoles,
+      assignedUsers,
     });
 
     if (validationMessage) {
       return res.status(400).json({ message: validationMessage });
     }
 
-    const uniqueAllowedUsers = [...new Set(allowedUsers)];
-    const uniqueAllowedRoles = [...new Set(allowedRoles)];
+    const uniqueAssignedUsers = [...new Set(assignedUsers)];
 
-    if (uniqueAllowedUsers.some((userId) => !mongoose.Types.ObjectId.isValid(userId))) {
-      return res.status(400).json({ message: "Allowed users must be valid user ids." });
+    if (uniqueAssignedUsers.some((userId) => !mongoose.Types.ObjectId.isValid(userId))) {
+      return res.status(400).json({ message: "Assigned users must be valid user ids." });
     }
 
-    const existingAllowedUsers =
-      uniqueAllowedUsers.length > 0
-        ? await User.find({ _id: { $in: uniqueAllowedUsers } }).select("_id")
+    const existingAssignedUsers =
+      uniqueAssignedUsers.length > 0
+        ? await User.find({ _id: { $in: uniqueAssignedUsers } }).select("_id")
         : [];
 
-    if (existingAllowedUsers.length !== uniqueAllowedUsers.length) {
+    if (existingAssignedUsers.length !== uniqueAssignedUsers.length) {
       return res.status(400).json({ message: "One or more assigned users were not found." });
     }
 
     const room = await Room.create({
       name: name.trim(),
       description,
-      isPrivate: roomIsPrivate,
-      allowedUsers: roomIsPrivate ? uniqueAllowedUsers : [],
-      allowedRoles: roomIsPrivate ? uniqueAllowedRoles : [],
-      locked: roomIsLocked,
-      isLocked: roomIsLocked,
+      isOpenToEveryone: roomIsOpenToEveryone,
+      assignedUsers: [],
       createdBy: req.user._id,
       members: [req.user._id],
     });
@@ -67,10 +84,41 @@ const createRoom = async (req, res) => {
       details: `${req.user.name} created ${room.name}`,
     });
 
+    const invitationUserIds = roomIsOpenToEveryone
+      ? (
+          await User.find({ _id: { $ne: req.user._id } }).select("_id")
+        ).map((invitee) => invitee._id.toString())
+      : uniqueAssignedUsers;
+
+    if (invitationUserIds.length > 0) {
+      const invitations = await RoomInvitation.insertMany(
+        invitationUserIds.map((assignedUserId) => ({
+          room: room._id,
+          invitedBy: req.user._id,
+          invitedUser: assignedUserId,
+          description: description || "",
+        })),
+        { ordered: false }
+      );
+      const populatedInvitations = await RoomInvitation.find({
+        _id: { $in: invitations.map((invitation) => invitation._id) },
+      })
+        .populate("room", "name")
+        .populate("invitedBy", "name email role")
+        .populate("invitedUser", "name email role");
+      const io = req.app.get("io");
+
+      populatedInvitations.forEach((invitation) => {
+        io
+          ?.to(`user:${invitation.invitedUser._id.toString()}`)
+          .emit("room-invitation", formatInvitationNotification(invitation));
+      });
+    }
+
     const createdRoom = await Room.findById(room._id)
       .populate("createdBy", "name email role")
       .populate("members", "name email role")
-      .populate("allowedUsers", "name email role");
+      .populate("assignedUsers", "name email role");
 
     res.status(201).json(createdRoom);
   } catch (error) {
@@ -83,7 +131,7 @@ const getRooms = async (req, res) => {
     const rooms = await Room.find()
       .populate("createdBy", "name email role")
       .populate("members", "name email role")
-      .populate("allowedUsers", "name email role")
+      .populate("assignedUsers", "name email role")
       .sort({ createdAt: -1 });
 
     res.json(rooms.filter((room) => canAccessRoom(req.user, room).allowed));
@@ -97,7 +145,7 @@ const getRoomById = async (req, res) => {
     const room = await Room.findById(req.params.id)
       .populate("createdBy", "name email role")
       .populate("members", "name email role")
-      .populate("allowedUsers", "name email role");
+      .populate("assignedUsers", "name email role");
 
     if (!room) {
       return res.status(404).json({ message: "Room not found" });

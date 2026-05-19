@@ -9,6 +9,7 @@ const { Server } = require("socket.io");
 const connectDB = require("./config/db");
 const authRoutes = require("./routes/authRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
+const invitationRoutes = require("./routes/invitationRoutes");
 const roomRoutes = require("./routes/roomRoutes");
 const userRoutes = require("./routes/userRoutes");
 const socketHandler = require("./sockets/socketHandler");
@@ -39,6 +40,7 @@ app.use(
 
 app.use("/api/auth", authRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/invitations", invitationRoutes);
 app.use("/api/rooms", roomRoutes);
 app.use("/api/users", userRoutes);
 
@@ -46,6 +48,7 @@ app.get("/", (req, res) => {
   res.send("CollabSpace API running");
 });
 
+app.set("io", io);
 socketHandler(io);
 
 const PORT = process.env.PORT || 5000;

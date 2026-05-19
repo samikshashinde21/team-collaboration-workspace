@@ -12,30 +12,16 @@ const roomSchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
-    isPrivate: {
+    isOpenToEveryone: {
       type: Boolean,
-      default: false,
+      default: true,
     },
-    allowedUsers: [
+    assignedUsers: [
       {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
       },
     ],
-    allowedRoles: [
-      {
-        type: String,
-        enum: ["admin", "moderator", "user"],
-      },
-    ],
-    locked: {
-      type: Boolean,
-      default: false,
-    },
-    isLocked: {
-      type: Boolean,
-      default: false,
-    },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
