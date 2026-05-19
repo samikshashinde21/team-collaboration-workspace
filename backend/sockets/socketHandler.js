@@ -53,7 +53,9 @@ const emitOnlineUsers = (io, roomId) => {
 const findRoomForAccess = (roomId) =>
   Room.findById(roomId)
     .populate("members", "name email role")
-    .populate("assignedUsers", "name email role");
+    .populate("assignedUsers", "name email role")
+    .populate("mutedUsers", "name email role")
+    .populate("screenShareBlocked", "name email role");
 
 const emitRoomParticipants = async (io, roomId, room = null) => {
   const populatedRoom =
@@ -65,12 +67,43 @@ const emitRoomParticipants = async (io, roomId, room = null) => {
 
   const onlineUserIds = getOnlineUserIds(roomId);
 
+  // build participant list with moderation state
+  const mutedSet = new Set((populatedRoom.mutedUsers || []).map((u) => (u._id || u).toString()));
+  const screenBlockedSet = new Set((populatedRoom.screenShareBlocked || []).map((u) => (u._id || u).toString()));
+
   io.to(roomId).emit("room-participants", {
     roomId,
-    participants: populatedRoom.members.map((member) =>
-      formatParticipant(member, onlineUserIds)
-    ),
+    participants: populatedRoom.members.map((member) => ({
+      ...formatParticipant(member, onlineUserIds),
+      muted: mutedSet.has((member._id || member).toString()),
+      screenShareBlocked: screenBlockedSet.has((member._id || member).toString()),
+    })),
   });
+};
+
+const isModeratorOrAdmin = (user) => user && (user.role === "admin" || user.role === "moderator");
+
+const removeUserSocketsFromRoom = (io, roomId, targetUserId) => {
+  const roomUsers = onlineUsersByRoom.get(roomId);
+
+  if (!roomUsers) return;
+
+  for (const [socketId, user] of roomUsers.entries()) {
+    if (user.id === targetUserId) {
+      const sock = io.sockets.sockets.get(socketId);
+      if (sock) {
+        sock.leave(roomId);
+        sock.joinedRooms && sock.joinedRooms.delete(roomId);
+        // notify the kicked socket directly
+        sock.emit("kicked", { roomId, message: "You were removed from the room by a moderator." });
+      }
+      roomUsers.delete(socketId);
+    }
+  }
+
+  if (roomUsers.size === 0) {
+    onlineUsersByRoom.delete(roomId);
+  }
 };
 
 const removeSocketFromRoom = async (io, socket, roomId) => {
@@ -233,6 +266,15 @@ const socketHandler = (io) => {
           return callback?.({ ok: false, message: access.message });
         }
 
+        // check if sender is muted in this room
+        const isMuted = (room.mutedUsers || []).some(
+          (m) => (m._id || m).toString() === socket.user._id.toString()
+        );
+
+        if (isMuted) {
+          return callback?.({ ok: false, message: "You have been muted by a moderator." });
+        }
+
         const message = await Message.create({
           room: roomId,
           sender: socket.user._id,
@@ -378,16 +420,165 @@ const socketHandler = (io) => {
       });
     });
 
-    socket.on("screen-share-start", ({ roomId }) => {
-      if (!roomId) {
-        return;
-      }
+    socket.on("screen-share-start", async ({ roomId }) => {
+      if (!roomId) return;
 
-      socket.to(roomId).emit("screen-share-start", {
-        roomId,
-        socketId: socket.id,
-        user: formatUser(socket.user),
-      });
+      try {
+        const room = await findRoomForAccess(roomId);
+
+        if (!room) {
+          return socket.emit("screen-share-error", {
+            roomId,
+            message: "Room not found",
+          });
+        }
+
+        // if user is blocked from screen sharing
+        const blocked = (room.screenShareBlocked || []).some(
+          (u) => (u._id || u).toString() === socket.user._id.toString()
+        );
+
+        if (blocked) {
+          return socket.emit("screen-share-error", {
+            roomId,
+            message: "Screen sharing has been blocked by a moderator.",
+          });
+        }
+
+        socket.to(roomId).emit("screen-share-start", {
+          roomId,
+          socketId: socket.id,
+          user: formatUser(socket.user),
+        });
+      } catch (err) {
+        socket.emit("screen-share-error", {
+          roomId,
+          message: "Could not start screen share",
+        });
+      }
+    });
+
+    // Moderation events
+    socket.on("mute-user", async ({ roomId, targetUserId }, callback) => {
+      try {
+        if (!isModeratorOrAdmin(socket.user)) {
+          return callback?.({ ok: false, message: "Insufficient permissions" });
+        }
+
+        const room = await findRoomForAccess(roomId);
+
+        if (!room) return callback?.({ ok: false, message: "Room not found" });
+
+        const targetUser = await User.findById(targetUserId).select("role name");
+
+        if (!targetUser) return callback?.({ ok: false, message: "User not found" });
+
+        if (targetUser.role === "admin" && socket.user.role !== "admin") {
+          return callback?.({ ok: false, message: "Cannot moderate an admin" });
+        }
+
+        await Room.findByIdAndUpdate(roomId, { $addToSet: { mutedUsers: targetUserId } });
+
+        io.to(roomId).emit("user-muted", { roomId, userId: targetUserId });
+        io.to(`user:${targetUserId}`).emit("force-mute", { roomId });
+        await emitRoomParticipants(io, roomId);
+
+        return callback?.({ ok: true });
+      } catch (err) {
+        return callback?.({ ok: false, message: "Could not mute user" });
+      }
+    });
+
+    socket.on("unmute-user", async ({ roomId, targetUserId }, callback) => {
+      try {
+        if (!isModeratorOrAdmin(socket.user)) {
+          return callback?.({ ok: false, message: "Insufficient permissions" });
+        }
+
+        const room = await findRoomForAccess(roomId);
+
+        if (!room) return callback?.({ ok: false, message: "Room not found" });
+
+        const targetUser = await User.findById(targetUserId).select("role name");
+
+        if (!targetUser) return callback?.({ ok: false, message: "User not found" });
+
+        await Room.findByIdAndUpdate(roomId, { $pull: { mutedUsers: targetUserId } });
+
+        io.to(roomId).emit("user-unmuted", { roomId, userId: targetUserId });
+        io.to(`user:${targetUserId}`).emit("force-unmute", { roomId });
+        await emitRoomParticipants(io, roomId);
+
+        return callback?.({ ok: true });
+      } catch (err) {
+        return callback?.({ ok: false, message: "Could not unmute user" });
+      }
+    });
+
+    socket.on("kick-user", async ({ roomId, targetUserId }, callback) => {
+      try {
+        if (!isModeratorOrAdmin(socket.user)) {
+          return callback?.({ ok: false, message: "Insufficient permissions" });
+        }
+
+        const room = await findRoomForAccess(roomId);
+
+        if (!room) return callback?.({ ok: false, message: "Room not found" });
+
+        const targetUser = await User.findById(targetUserId).select("role name");
+
+        if (!targetUser) return callback?.({ ok: false, message: "User not found" });
+
+        if (targetUser.role === "admin" && socket.user.role !== "admin") {
+          return callback?.({ ok: false, message: "Cannot moderate an admin" });
+        }
+
+        await Room.findByIdAndUpdate(roomId, { $pull: { members: targetUserId } });
+
+        // remove their sockets from the room and notify
+        removeUserSocketsFromRoom(io, roomId, targetUserId);
+
+        io.to(roomId).emit("user-kicked", { roomId, userId: targetUserId });
+        await emitRoomParticipants(io, roomId);
+
+        return callback?.({ ok: true });
+      } catch (err) {
+        return callback?.({ ok: false, message: "Could not remove user" });
+      }
+    });
+
+    socket.on("toggle-screen-share-permission", async ({ roomId, targetUserId, allow }, callback) => {
+      try {
+        if (!isModeratorOrAdmin(socket.user)) {
+          return callback?.({ ok: false, message: "Insufficient permissions" });
+        }
+
+        const room = await findRoomForAccess(roomId);
+
+        if (!room) return callback?.({ ok: false, message: "Room not found" });
+
+        const targetUser = await User.findById(targetUserId).select("role name");
+
+        if (!targetUser) return callback?.({ ok: false, message: "User not found" });
+
+        if (targetUser.role === "admin" && socket.user.role !== "admin") {
+          return callback?.({ ok: false, message: "Cannot moderate an admin" });
+        }
+
+        if (allow) {
+          await Room.findByIdAndUpdate(roomId, { $pull: { screenShareBlocked: targetUserId } });
+        } else {
+          await Room.findByIdAndUpdate(roomId, { $addToSet: { screenShareBlocked: targetUserId } });
+        }
+
+        io.to(roomId).emit("screen-share-updated", { roomId, userId: targetUserId, allowed: !!allow });
+        io.to(`user:${targetUserId}`).emit("screen-share-permission", { roomId, allowed: !!allow });
+        await emitRoomParticipants(io, roomId);
+
+        return callback?.({ ok: true });
+      } catch (err) {
+        return callback?.({ ok: false, message: "Could not update screen share permission" });
+      }
     });
 
     socket.on("screen-share-stop", ({ roomId }) => {

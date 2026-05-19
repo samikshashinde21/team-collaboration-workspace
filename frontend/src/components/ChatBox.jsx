@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
 import { useAuth } from "../hooks/useAuth";
 
@@ -15,7 +16,9 @@ const ChatBox = ({ roomId, onOnlineUsersChange, onParticipantsChange }) => {
   const [messageText, setMessageText] = useState("");
   const [typingUsers, setTypingUsers] = useState([]);
   const [connectionError, setConnectionError] = useState("");
+  const [isMuted, setIsMuted] = useState(false);
   const socketRef = useRef(null);
+  const navigate = useNavigate();
   const typingTimeoutRef = useRef(null);
 
   useEffect(() => {
@@ -72,6 +75,30 @@ const ChatBox = ({ roomId, onOnlineUsersChange, onParticipantsChange }) => {
 
     socket.on("room-participants", ({ participants }) => {
       onParticipantsChange?.(participants);
+    });
+
+    socket.on("user-muted", ({ userId }) => {
+      if (userId === user?.id) setIsMuted(true);
+    });
+
+    socket.on("user-unmuted", ({ userId }) => {
+      if (userId === user?.id) setIsMuted(false);
+    });
+
+    socket.on("kicked", ({ roomId: evRoomId, message }) => {
+      if (evRoomId === roomId && user?.id) {
+        setConnectionError(message || "You were removed from the room.");
+        navigate("/rooms", { replace: true });
+      }
+    });
+
+    // direct moderation messages for this user
+    socket.on("force-mute", ({ roomId: evRoomId }) => {
+      if (evRoomId === roomId) setIsMuted(true);
+    });
+
+    socket.on("force-unmute", ({ roomId: evRoomId }) => {
+      if (evRoomId === roomId) setIsMuted(false);
     });
 
     return () => {
@@ -173,6 +200,11 @@ const ChatBox = ({ roomId, onOnlineUsersChange, onParticipantsChange }) => {
       <div className="mt-2 min-h-5 text-sm text-slate-500">
         {typingNames.length > 0 && `${typingNames.join(", ")} typing...`}
       </div>
+      {isMuted && (
+        <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+          You have been muted by a moderator.
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="mt-3 flex gap-2">
         <input
@@ -180,11 +212,17 @@ const ChatBox = ({ roomId, onOnlineUsersChange, onParticipantsChange }) => {
           value={messageText}
           onChange={handleChange}
           placeholder="Type a message"
-          className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-slate-900"
+          disabled={isMuted}
+          className={`min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-slate-900 ${
+            isMuted ? "bg-slate-100 cursor-not-allowed" : ""
+          }`}
         />
         <button
           type="submit"
-          className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+          disabled={isMuted}
+          className={`rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 ${
+            isMuted ? "opacity-50 cursor-not-allowed" : ""
+          }`}
         >
           Send
         </button>

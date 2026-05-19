@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { Link, useParams } from "react-router-dom";
 import api from "../api/api";
 import ChatBox from "../components/ChatBox";
 import VideoCall from "../components/VideoCall";
 import { useAuth } from "../hooks/useAuth";
+import { io } from "socket.io-client";
 
 const roleBadgeClass = {
   admin: "bg-rose-100 text-rose-700",
@@ -11,9 +12,89 @@ const roleBadgeClass = {
   user: "bg-slate-100 text-slate-700",
 };
 
+const ParticipantModerationMenu = ({ roomId, member, currentUser }) => {
+  const socketRef = useRef(null);
+  const { token } = useAuth();
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!token) return;
+
+    socketRef.current = io("http://localhost:5000", { auth: { token } });
+    socketRef.current.on("connect_error", () => {});
+
+    return () => {
+      socketRef.current?.disconnect();
+      socketRef.current = null;
+    };
+  }, [token]);
+
+  const emit = (event, payload) =>
+    new Promise((resolve) => {
+      socketRef.current?.emit(event, payload, (response) => resolve(response));
+    });
+
+  const handleMute = async () => {
+    const res = await emit("mute-user", { roomId, targetUserId: member._id || member.id });
+    setOpen(false);
+    if (!res?.ok) alert(res?.message || "Could not mute user");
+  };
+
+  const handleUnmute = async () => {
+    const res = await emit("unmute-user", { roomId, targetUserId: member._id || member.id });
+    setOpen(false);
+    if (!res?.ok) alert(res?.message || "Could not unmute user");
+  };
+
+  const handleKick = async () => {
+    if (!window.confirm(`Remove ${member.name} from the room?`)) return;
+    const res = await emit("kick-user", { roomId, targetUserId: member._id || member.id });
+    setOpen(false);
+    if (!res?.ok) alert(res?.message || "Could not remove user");
+  };
+
+  const handleToggleScreen = async () => {
+    const allow = !!member.screenShareBlocked;
+    const res = await emit("toggle-screen-share-permission", {
+      roomId,
+      targetUserId: member._id || member.id,
+      allow: allow,
+    });
+    setOpen(false);
+    if (!res?.ok) alert(res?.message || "Could not update screen share permission");
+  };
+
+  return (
+    <div className="mt-2 flex items-center justify-end">
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setOpen((s) => !s)}
+          className="rounded-md border border-slate-300 px-2 py-1 text-xs"
+        >
+          •••
+        </button>
+        {open && (
+          <div className="absolute right-0 mt-2 w-48 rounded-md border bg-white shadow-md">
+            <button onClick={member.muted ? handleUnmute : handleMute} className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50">
+              {member.muted ? "Unmute" : "Mute"}
+            </button>
+            <button onClick={handleKick} className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50">
+              Remove
+            </button>
+            <button onClick={handleToggleScreen} className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50">
+              {member.screenShareBlocked ? "Allow Screen Share" : "Block Screen Share"}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const RoomDetails = () => {
   const { id } = useParams();
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const [room, setRoom] = useState(null);
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [users, setUsers] = useState([]);
@@ -370,18 +451,35 @@ const RoomDetails = () => {
                     className="rounded-md border border-slate-100 bg-slate-50 px-3 py-2"
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <p className="min-w-0 truncate text-sm font-medium">{member.name}</p>
-                      <span
-                        className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
-                          isOnline
-                            ? "bg-emerald-100 text-emerald-700"
-                            : "bg-slate-200 text-slate-600"
-                        }`}
-                      >
-                        {isOnline ? "Online" : "Offline"}
-                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{member.name}</p>
+                        <p className="text-xs text-slate-500">{member.role}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {member.muted && (
+                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                            Muted
+                          </span>
+                        )}
+                        {member.screenShareBlocked && (
+                          <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">
+                            Screen blocked
+                          </span>
+                        )}
+                        <span
+                          className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
+                            isOnline ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"
+                          }`}
+                        >
+                          {isOnline ? "Online" : "Offline"}
+                        </span>
+                      </div>
                     </div>
-                    <p className="text-xs capitalize text-slate-500">{member.role}</p>
+
+                    {/* moderation menu for admins/moderators */}
+                    {(user?.role === "admin" || user?.role === "moderator") && user?.id !== memberId && (
+                      <ParticipantModerationMenu roomId={room._id} member={member} currentUser={user} />
+                    )}
                   </div>
                 );
               })

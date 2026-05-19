@@ -31,6 +31,7 @@ const VideoCall = ({ roomId }) => {
   const [remoteUserName, setRemoteUserName] = useState("");
   const [status, setStatus] = useState("Ready to start a two-person call.");
   const [error, setError] = useState("");
+  const [isMutedFromModerator, setIsMutedFromModerator] = useState(false);
 
   useEffect(() => {
     if (localVideoRef.current) {
@@ -202,6 +203,25 @@ const VideoCall = ({ roomId }) => {
           setError("Could not add network candidate for the call.");
         }
       });
+
+      socket.on("force-mute", () => {
+        setIsMutedFromModerator(true);
+        setIsMicOn(false);
+        try {
+          const audioTrack = localStreamRef.current?.getAudioTracks()[0];
+          if (audioTrack) audioTrack.enabled = false;
+        } catch (e) {}
+      });
+
+      socket.on("force-unmute", () => {
+        setIsMutedFromModerator(false);
+      });
+
+      socket.on("screen-share-permission", ({ allowed }) => {
+        if (!allowed) {
+          setError("Screen sharing has been blocked by a moderator.");
+        }
+      });
     },
     [createPeerConnection, resetPeerConnection, roomId]
   );
@@ -285,6 +305,11 @@ const VideoCall = ({ roomId }) => {
   };
 
   const toggleMicrophone = () => {
+    if (isMutedFromModerator) {
+      setError("You have been muted by a moderator.");
+      return;
+    }
+
     const audioTrack = localStreamRef.current?.getAudioTracks()[0];
 
     if (!audioTrack) {
@@ -324,7 +349,10 @@ const VideoCall = ({ roomId }) => {
               <button
                 type="button"
                 onClick={toggleMicrophone}
-                className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                disabled={isMutedFromModerator}
+                className={`rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 ${
+                  isMutedFromModerator ? "opacity-50 cursor-not-allowed" : ""
+                }`}
               >
                 {isMicOn ? "Mic off" : "Mic on"}
               </button>
