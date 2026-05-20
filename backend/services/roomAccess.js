@@ -6,12 +6,15 @@ const canAccessRoom = (user, room) => {
     return { allowed: false, message: "Room access could not be verified." };
   }
 
-  if (user.role === "admin" || user.role === "moderator") {
+  if (user.role === "admin") {
     return { allowed: true };
   }
 
   const userId = user._id?.toString() || user.id?.toString();
   const removedUserIds = normalizeIds(room.removedUsers || []);
+  const memberIds = normalizeIds(room.members || []);
+  const assignedUserIds = normalizeIds(room.assignedUsers || room.allowedUsers);
+  const createdById = (room.createdBy?._id || room.createdBy)?.toString();
 
   if (removedUserIds.includes(userId)) {
     return {
@@ -20,13 +23,22 @@ const canAccessRoom = (user, room) => {
     };
   }
 
+  if (user.role === "moderator") {
+    if (memberIds.includes(userId) || assignedUserIds.includes(userId) || createdById === userId) {
+      return { allowed: true };
+    }
+
+    return {
+      allowed: false,
+      message: "Access denied. Moderators can only manage rooms they belong to.",
+    };
+  }
+
   if (room.isOpenToEveryone ?? !room.isPrivate) {
     return { allowed: true };
   }
 
-  const assignedUserIds = normalizeIds(room.assignedUsers || room.allowedUsers);
-
-  if (assignedUserIds.includes(userId)) {
+  if (assignedUserIds.includes(userId) || memberIds.includes(userId)) {
     return { allowed: true };
   }
 

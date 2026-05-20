@@ -3,6 +3,7 @@ const Message = require("../models/Message");
 const Meeting = require("../models/Meeting");
 const MeetingMessage = require("../models/MeetingMessage");
 const Room = require("../models/Room");
+const RoomInvitation = require("../models/RoomInvitation");
 const User = require("../models/User");
 const { ACTIONS, createActivityLog } = require("../services/activityLogger");
 const { createNotification } = require("../services/notificationService");
@@ -937,6 +938,9 @@ const socketHandler = (io) => {
         if (targetUser.role === "admin" && socket.user.role !== "admin") {
           return callback?.({ ok: false, message: "Cannot moderate an admin" });
         }
+        if (targetUser.role === "moderator" && socket.user.role !== "admin") {
+          return callback?.({ ok: false, message: "Only admins can remove a moderator" });
+        }
 
         const updatedRoom = await Room.findByIdAndUpdate(
           roomId,
@@ -946,6 +950,10 @@ const socketHandler = (io) => {
           },
           { new: true }
         ).populate("members", "name email role");
+        await RoomInvitation.updateMany(
+          { room: roomId, invitedUser: targetUserId, status: { $in: ["pending", "accepted"] } },
+          { status: "rejected", invitedUserRead: true, inviterRead: false }
+        );
 
         // remove their sockets from the room and notify
         removeUserSocketsFromRoom(io, roomId, targetUserId);

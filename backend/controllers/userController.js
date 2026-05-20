@@ -20,7 +20,8 @@ const formatUserProfile = (user) => ({
 
 const getUsers = async (req, res) => {
   try {
-    const users = await User.find().select("-password").sort({ createdAt: -1 });
+    const query = req.user.role === "moderator" ? { role: { $ne: "admin" } } : {};
+    const users = await User.find(query).select("-password").sort({ createdAt: -1 });
 
     res.json(users);
   } catch (error) {

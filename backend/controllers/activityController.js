@@ -65,7 +65,7 @@ const buildActivityQuery = async (req, baseQuery = {}) => {
     query.action = { $in: operationalActions };
   }
 
-  if (req.user.role !== "admin" && req.user.role !== "moderator") {
+  if (req.user.role !== "admin") {
     const accessibleRoomIds = await getAccessibleRoomIds(req.user);
     query.$or = [
       { actor: req.user._id },

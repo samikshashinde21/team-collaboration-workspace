@@ -718,6 +718,127 @@ const Dashboard = () => {
     );
   }
 
+  if (user?.role === "moderator") {
+    return (
+      <section className="relative space-y-6">
+        <div className="pointer-events-none absolute -right-8 top-20 hidden h-36 w-36 rounded-[2rem] bg-sky-300/20 blur-2xl md:block" />
+
+        <div className="page-hero overflow-hidden">
+          <div className="max-w-3xl">
+            <p className="section-kicker">Moderator Workspace</p>
+            <h1 className="mt-3 text-4xl font-black tracking-tight text-navy-900 md:text-5xl">
+              Room operations, {user?.name}
+            </h1>
+            <p className="mt-3 max-w-2xl text-slate-600">
+              Manage your assigned rooms, meetings, participants, invitations, and recent room activity.
+            </p>
+          </div>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <span className="status-pill bg-sky-100 text-sky-700">Moderator</span>
+            <span className="status-pill">{userRooms.length} assigned rooms</span>
+          </div>
+        </div>
+
+        {userDashboardError && (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+            {userDashboardError}
+          </div>
+        )}
+
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {[
+            { label: "Assigned rooms", value: userRooms.length, icon: DoorOpen, to: "/rooms" },
+            { label: "Live meetings", value: activeMeetings.length, icon: Radio, to: "/rooms" },
+            { label: "Upcoming meetings", value: upcomingMeetings.filter((meeting) => meeting.status === "scheduled").length, icon: CalendarClock, to: "/rooms" },
+            { label: "Pending invitations", value: pendingInvitations.length, icon: MailQuestion, to: "/invitations" },
+          ].map((card) => {
+            const Icon = card.icon;
+
+            return (
+              <Link key={card.label} to={card.to} className="premium-card group relative overflow-hidden p-5">
+                <div className="absolute inset-x-0 top-0 h-20 bg-gradient-to-br from-sky-200/40 via-white/40 to-mint-300/20" />
+                <div className="relative flex items-start justify-between gap-4">
+                  <span className="icon-chip h-11 w-11">
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  <ArrowUpRight className="h-5 w-5 text-lavender-500 transition group-hover:translate-x-1 group-hover:-translate-y-1" />
+                </div>
+                <p className="relative mt-6 text-sm font-bold text-slate-500">{card.label}</p>
+                <p className="relative mt-2 text-3xl font-black text-navy-900">{card.value}</p>
+              </Link>
+            );
+          })}
+        </div>
+
+        {liveMeeting && (
+          <Link to={`/rooms/${liveMeeting.roomId}/meeting/${liveMeeting.id}`} className="block rounded-3xl border border-emerald-200 bg-emerald-50/80 p-5 shadow-soft transition hover:-translate-y-0.5 hover:shadow-lift">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <span className="rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-black text-white">LIVE</span>
+                <h2 className="mt-2 text-xl font-black text-navy-900">{liveMeeting.title}</h2>
+                <p className="mt-1 text-sm text-slate-600">{liveMeeting.roomName}</p>
+              </div>
+              <span className="btn-primary w-fit bg-emerald-700">Join meeting</span>
+            </div>
+          </Link>
+        )}
+
+        <section className="grid gap-5 xl:grid-cols-[1fr_0.9fr]">
+          <div className="soft-panel p-5">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="inline-flex items-center gap-2 text-xl font-black text-navy-900">
+                  <Video className="h-5 w-5 text-sky-500" />
+                  Managed Rooms
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">Rooms where your moderator tools are available.</p>
+              </div>
+              <Link to="/rooms" className="btn-secondary w-fit">View rooms</Link>
+            </div>
+            <div className="scroll-panel max-h-[24rem] space-y-3">
+              {isUserDashboardLoading ? (
+                <p className="rounded-xl bg-white/60 px-4 py-5 text-sm text-slate-600">Loading rooms...</p>
+              ) : userRooms.length ? (
+                userRooms.slice(0, 8).map((room) => (
+                  <Link key={room._id} to={`/rooms/${room._id}`} className="block rounded-2xl border border-white/70 bg-white/65 px-4 py-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-soft">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-black text-navy-900">{room.name}</p>
+                        <p className="mt-1 text-xs text-slate-500">{room.onlineParticipantsCount || 0} online participants</p>
+                      </div>
+                      {room.activeMeeting ? (
+                        <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-black text-emerald-700">Live</span>
+                      ) : (
+                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-600">Open</span>
+                      )}
+                    </div>
+                  </Link>
+                ))
+              ) : (
+                <p className="rounded-2xl border border-dashed border-slate-300 bg-white/55 px-4 py-8 text-center text-sm text-slate-600">
+                  No assigned rooms yet.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="soft-panel p-5">
+            <div className="mb-4">
+              <h2 className="inline-flex items-center gap-2 text-xl font-black text-navy-900">
+                <Activity className="h-5 w-5 text-mint-500" />
+                Room Activity
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">Recent operational activity from rooms you can manage.</p>
+            </div>
+            <div className="scroll-panel max-h-[24rem]">
+              <ActivityTimeline activities={recentPersonalActivity} emptyTitle="No room activity yet" compact />
+            </div>
+          </div>
+        </section>
+      </section>
+    );
+  }
+
   return (
     <section className="relative space-y-6">
       <div className="pointer-events-none absolute -right-8 top-20 hidden h-36 w-36 rounded-[2rem] bg-mint-300/20 blur-2xl md:block" />

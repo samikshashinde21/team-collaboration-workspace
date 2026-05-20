@@ -3,7 +3,7 @@ const Room = require("../models/Room");
 const RoomInvitation = require("../models/RoomInvitation");
 const User = require("../models/User");
 const { ACTIONS, createActivityLog } = require("../services/activityLogger");
-const { createNotification } = require("../services/notificationService");
+const { createNotification, createNotifications } = require("../services/notificationService");
 
 const formatInvitation = (invitation) => ({
   id: invitation._id.toString(),
@@ -56,7 +56,10 @@ const createInvitation = async (req, res) => {
     }
 
     const [room, invitedUser] = await Promise.all([
-      Room.findById(roomId),
+      Room.findById(roomId)
+        .populate("members", "name email role")
+        .populate("assignedUsers", "name email role")
+        .populate("removedUsers", "name email role"),
       User.findById(invitedUserId).select("-password"),
     ]);
 
@@ -72,18 +75,43 @@ const createInvitation = async (req, res) => {
       return res.status(400).json({ message: "Admins already have room access." });
     }
 
+    const invitedUserIdString = invitedUser._id.toString();
+    const hasRoomAccess =
+      room.members.some((member) => member._id.toString() === invitedUserIdString) ||
+      room.assignedUsers.some((member) => member._id.toString() === invitedUserIdString);
+    const wasRemoved = room.removedUsers.some(
+      (member) => member._id.toString() === invitedUserIdString
+    );
     const existingInvitation = await RoomInvitation.findOne({
       room: roomId,
       invitedUser: invitedUserId,
       status: { $in: ["pending", "accepted"] },
-    });
+    }).sort({ updatedAt: -1 });
 
-    if (existingInvitation?.status === "pending") {
+    if (existingInvitation?.status === "pending" && !wasRemoved) {
       return res.status(409).json({ message: "This user already has a pending invitation." });
     }
 
-    if (existingInvitation?.status === "accepted") {
-      return res.status(400).json({ message: "This user already accepted the invitation." });
+    if (existingInvitation?.status === "accepted" && hasRoomAccess && !wasRemoved) {
+      return res.status(400).json({ message: "This user already has room access." });
+    }
+
+    if (existingInvitation && (wasRemoved || !hasRoomAccess)) {
+      await RoomInvitation.updateMany({
+        room: roomId,
+        invitedUser: invitedUserId,
+        status: { $in: ["pending", "accepted"] },
+      }, {
+        $set: {
+          status: "rejected",
+          invitedUserRead: true,
+          inviterRead: false,
+        },
+      });
+    } else if (existingInvitation?.status === "pending") {
+      return res.status(409).json({ message: "This user already has a pending invitation." });
+    } else if (existingInvitation?.status === "accepted") {
+      return res.status(400).json({ message: "This user already has room access." });
     }
 
     const invitation = await RoomInvitation.create({
@@ -107,6 +135,23 @@ const createInvitation = async (req, res) => {
       action: ACTIONS.INVITATION_SENT,
       description: `${req.user.name} invited ${invitedUser.name} to ${room.name}`,
     });
+
+    if (req.user.role === "moderator") {
+      const admins = await User.find({
+        role: "admin",
+        _id: { $nin: [req.user._id, invitedUser._id] },
+      }).select("_id");
+
+      await createNotifications({
+        io,
+        recipients: admins.map((admin) => admin._id),
+        type: "INVITATION_SENT",
+        title: "Moderator sent an invitation",
+        message: `${req.user.name} invited ${invitedUser.name} to ${room.name}.`,
+        room: room._id,
+        invitation: invitation._id,
+      });
+    }
 
     res.status(201).json(formattedInvitation);
   } catch (error) {
@@ -134,7 +179,10 @@ const getRoomInvitations = async (req, res) => {
       return res.status(400).json({ message: "Valid room id is required." });
     }
 
-    const room = await Room.findById(req.params.roomId);
+    const room = await Room.findById(req.params.roomId)
+      .populate("members", "name email role")
+      .populate("assignedUsers", "name email role")
+      .populate("removedUsers", "name email role");
 
     if (!room) {
       return res.status(404).json({ message: "Room not found." });

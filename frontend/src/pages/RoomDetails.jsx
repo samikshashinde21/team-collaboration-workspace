@@ -282,6 +282,17 @@ const RoomDetails = () => {
 
   const canInvite = user?.role === "admin" || user?.role === "moderator";
   const canManageMeetings = user?.role === "admin" || user?.role === "moderator";
+  const canRemoveParticipant = (member) => {
+    if (user?.role === "admin") {
+      return user?.id !== (member._id || member.id);
+    }
+
+    if (user?.role === "moderator") {
+      return member.role === "user";
+    }
+
+    return false;
+  };
   const todayInputDate = getTodayInputDate();
 
   const fetchRoomInvitations = useCallback(async () => {
@@ -318,20 +329,20 @@ const RoomDetails = () => {
 
     const fetchRoom = async () => {
       try {
-        const [
-          { data: roomData },
-          { data: meetingsData },
-          { data: activityData },
-        ] = await Promise.all([
+        const [roomResult, meetingsResult, activityResult] = await Promise.allSettled([
           api.get(`/rooms/${id}`),
           api.get(`/rooms/${id}/meetings`),
           api.get(`/rooms/${id}/activity`),
         ]);
 
+        if (roomResult.status === "rejected") {
+          throw roomResult.reason;
+        }
+
         if (isMounted) {
-          setRoom(roomData);
-          setMeetings(meetingsData);
-          setActivities(activityData);
+          setRoom(roomResult.value.data);
+          setMeetings(meetingsResult.status === "fulfilled" ? meetingsResult.value.data : []);
+          setActivities(activityResult.status === "fulfilled" ? activityResult.value.data : []);
         }
       } catch (err) {
         if (isMounted) {
@@ -570,17 +581,25 @@ const RoomDetails = () => {
   }
 
   const isOpenRoom = room.isOpenToEveryone ?? !room.isPrivate;
-  const roomInvitationByUserId = new Map(
-    roomInvitations.reduce((invitationsByUser, invitation) => {
-      const invitedUserId = invitation.invitedUser?.id;
+  const roomInvitationByUserId = new Map();
 
-      if (invitedUserId && !invitationsByUser.some((item) => item.invitedUser?.id === invitedUserId)) {
-        invitationsByUser.push(invitation);
-      }
+  roomInvitations.forEach((invitation) => {
+    const invitedUserId = invitation.invitedUser?.id;
 
-      return invitationsByUser;
-    }, []).map((invitation) => [invitation.invitedUser?.id, invitation])
-  );
+    if (!invitedUserId) {
+      return;
+    }
+
+    const currentInvitation = roomInvitationByUserId.get(invitedUserId);
+    const currentTimestamp = new Date(
+      currentInvitation?.updatedAt || currentInvitation?.createdAt || 0
+    ).getTime();
+    const nextTimestamp = new Date(invitation.updatedAt || invitation.createdAt || 0).getTime();
+
+    if (!currentInvitation || nextTimestamp >= currentTimestamp) {
+      roomInvitationByUserId.set(invitedUserId, invitation);
+    }
+  });
   const participantMap = new Map();
 
   (room.assignedUsers || []).forEach((member) => {
@@ -835,13 +854,18 @@ const RoomDetails = () => {
                 users.map((member) => {
                   const invitation = roomInvitationByUserId.get(member._id);
                   const invitationStatus = invitation?.status;
-                  const alwaysHasAccess = member.role === "admin" || member.role === "moderator";
+                  const alwaysHasAccess = member.role === "admin";
                   const isSelf = member._id === user?.id;
+                  const memberHasRoomAccess = participants.some(
+                    (participant) => (participant._id || participant.id) === member._id
+                  );
+                  const isAcceptedInRoom = invitationStatus === "accepted" && memberHasRoomAccess;
                   const isDisabled =
                     alwaysHasAccess ||
                     isSelf ||
+                    memberHasRoomAccess ||
                     invitationStatus === "pending" ||
-                    invitationStatus === "accepted" ||
+                    isAcceptedInRoom ||
                     invitingUserId === member._id;
 
                   return (
@@ -868,9 +892,11 @@ const RoomDetails = () => {
                       >
                         {alwaysHasAccess
                           ? "Always access"
+                          : memberHasRoomAccess
+                            ? "In room"
                           : invitationStatus === "pending"
                             ? "Pending"
-                            : invitationStatus === "accepted"
+                            : isAcceptedInRoom
                               ? "Accepted"
                               : invitingUserId === member._id
                                 ? "Sending..."
@@ -1033,7 +1059,7 @@ const RoomDetails = () => {
                     </div>
 
                     {/* moderation menu for admins/moderators */}
-                    {(user?.role === "admin" || user?.role === "moderator") && user?.id !== memberId && (
+                    {canRemoveParticipant(member) && (
                       <ParticipantModerationMenu
                         roomId={room._id}
                         member={member}
@@ -1048,8 +1074,16 @@ const RoomDetails = () => {
                                   members: (currentRoom.members || []).filter(
                                     (roomMember) => (roomMember._id || roomMember.id) !== removedMemberId
                                   ),
+                                  removedUsers: [...(currentRoom.removedUsers || []), removedMemberId],
                                 }
                               : currentRoom
+                          );
+                          setRoomInvitations((currentInvitations) =>
+                            currentInvitations.map((invitation) =>
+                              invitation.invitedUser?.id === removedMemberId
+                                ? { ...invitation, status: "rejected" }
+                                : invitation
+                            )
                           );
                         }}
                       />

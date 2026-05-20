@@ -39,7 +39,7 @@ const Rooms = () => {
   const [roomPendingDelete, setRoomPendingDelete] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
 
-  const canCreateRoom = user?.role === "admin";
+const canCreateRoom = user?.role === "admin";
   const canDeleteRoom = user?.role === "admin";
   const usersByRole = assignmentSections.reduce(
     (groups, section) => ({
@@ -484,7 +484,7 @@ const Rooms = () => {
                     <div>
                       <h3 className="text-sm font-semibold text-slate-900">Assign Users</h3>
                       <p className="mt-1 text-sm text-slate-500">
-                        Selected users can join this room. Admins and moderators always have access.
+                        Selected users can join this room. Admins always have access; moderators need to be assigned.
                       </p>
                     </div>
                     <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
