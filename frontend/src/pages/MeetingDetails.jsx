@@ -75,6 +75,7 @@ const MeetingDetails = () => {
   const navigate = useNavigate();
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
+  const remoteAudioRef = useRef(null);
   const screenVideoRef = useRef(null);
   const socketRef = useRef(null);
   const peerConnectionRef = useRef(null);
@@ -176,6 +177,11 @@ const MeetingDetails = () => {
   useEffect(() => {
     if (remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = remoteStream;
+    }
+
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = remoteStream;
+      remoteAudioRef.current.play().catch(() => {});
     }
   }, [remoteStream]);
 
@@ -963,7 +969,7 @@ const MeetingDetails = () => {
     }
 
     if (presentationStage && hasRemoteFeed) {
-      return <video ref={remoteVideoRef} autoPlay playsInline className="h-full w-full object-contain" />;
+      return <video ref={remoteVideoRef} autoPlay playsInline muted className="h-full w-full object-contain" />;
     }
 
     if (hasLocalVideo) {
@@ -971,7 +977,7 @@ const MeetingDetails = () => {
     }
 
     if (hasRemoteVideo) {
-      return <video ref={remoteVideoRef} autoPlay playsInline className="h-full w-full object-cover" />;
+      return <video ref={remoteVideoRef} autoPlay playsInline muted className="h-full w-full object-cover" />;
     }
 
     return (
@@ -1004,9 +1010,8 @@ const MeetingDetails = () => {
       >
         {renderParticipantMedia(participant, { compact })}
         {isSpeaking && (
-          <div className={`absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-full border border-mint-300/60 bg-mint-300/25 font-bold text-mint-100 shadow-soft backdrop-blur ${compact ? "px-2 py-1 text-[11px]" : "px-3 py-1.5 text-xs"}`}>
+          <div className={`absolute right-3 top-3 inline-flex items-center justify-center rounded-full border border-mint-300/60 bg-mint-300/25 font-bold text-mint-100 shadow-soft backdrop-blur ${compact ? "h-8 w-8" : "h-9 w-9"}`} title="Mic active">
             <Mic className="h-3.5 w-3.5 animate-pulse" />
-            {!compact && <span>Speaking</span>}
           </div>
         )}
         <div className={`absolute inset-x-0 bottom-0 flex items-center justify-between gap-3 bg-gradient-to-t from-black/80 to-transparent ${compact ? "px-2 py-2" : "px-3 py-3"}`}>
@@ -1064,6 +1069,7 @@ const MeetingDetails = () => {
 
   return (
     <section className="fixed inset-0 z-50 flex overflow-hidden bg-navy-950 text-white">
+      <audio ref={remoteAudioRef} autoPlay className="hidden" />
       <div className="pointer-events-none absolute inset-0 bg-soft-grid opacity-20 [background-size:36px_36px]" />
       <div className="relative z-10 flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/5 px-4 py-3 backdrop-blur-2xl md:px-5">
@@ -1132,11 +1138,11 @@ const MeetingDetails = () => {
                       </div>
                       <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500">
                         <Circle className={`h-2 w-2 ${participant.live ? "fill-mint-500 text-mint-500" : "fill-slate-300 text-slate-300"}`} />
-                        {participant.speaking && participant.micOn ? "Speaking now" : participant.live ? "Live now" : "Offline"}
+                        {participant.live ? "Live now" : "Offline"}
                       </p>
                     </div>
                     <div className="flex items-center gap-1.5 text-slate-600">
-                      <StatusIcon active={participant.micOn} label={participant.speaking && participant.micOn ? "Speaking" : participant.micOn ? "Mic on" : "Mic off"}>
+                      <StatusIcon active={participant.micOn} label={participant.micOn ? "Mic on" : "Mic off"}>
                         {participant.micOn ? <Mic className={`h-3.5 w-3.5 ${participant.speaking ? "animate-pulse" : ""}`} /> : <MicOff className="h-3.5 w-3.5" />}
                       </StatusIcon>
                       <StatusIcon active={participant.cameraOn} label={participant.cameraOn ? "Camera on" : "Camera off"}>

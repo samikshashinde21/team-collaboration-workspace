@@ -21,9 +21,10 @@ const isValidEmail = (email = "") => emailPattern.test(normalizeEmail(email));
 
 const hashResetToken = (token) => crypto.createHash("sha256").update(token).digest("hex");
 
-const getResetBaseUrl = () =>
+const getResetBaseUrl = (req) =>
   process.env.FRONTEND_URL ||
   process.env.CLIENT_URL ||
+  req.get("origin") ||
   "http://localhost:5173";
 
 const sendAuthResponse = (res, statusCode, user) => {
@@ -145,7 +146,7 @@ const forgotPassword = async (req, res) => {
       user.resetPasswordToken = hashResetToken(resetToken);
       user.resetPasswordExpires = new Date(Date.now() + 30 * 60 * 1000);
       await user.save();
-      resetUrl = `${getResetBaseUrl().replace(/\/$/, "")}/reset-password/${resetToken}`;
+      resetUrl = `${getResetBaseUrl(req).replace(/\/$/, "")}/reset-password/${resetToken}`;
     }
 
     return res.json({
