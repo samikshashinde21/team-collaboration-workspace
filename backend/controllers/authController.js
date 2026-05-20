@@ -9,6 +9,9 @@ const createToken = (userId) => {
   });
 };
 
+const isStrongPassword = (password = "") =>
+  password.length > 6 && /[A-Z]/.test(password) && /[a-z]/.test(password) && /\d/.test(password);
+
 const sendAuthResponse = (res, statusCode, user) => {
   const token = createToken(user._id);
 
@@ -19,6 +22,8 @@ const sendAuthResponse = (res, statusCode, user) => {
       name: user.name,
       email: user.email,
       role: user.role,
+      avatarUrl: user.avatarUrl || "",
+      createdAt: user.createdAt,
     },
   });
 };
@@ -31,8 +36,10 @@ const register = async (req, res) => {
       return res.status(400).json({ message: "Name, email, and password are required" });
     }
 
-    if (password.length < 6) {
-      return res.status(400).json({ message: "Password must be at least 6 characters" });
+    if (!isStrongPassword(password)) {
+      return res.status(400).json({
+        message: "Password must be more than 6 characters and include uppercase, lowercase, and a number.",
+      });
     }
 
     const existingUser = await User.findOne({ email });

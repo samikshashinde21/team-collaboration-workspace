@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { Mail, LockKeyhole, UserPlus, UserRound } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
+import PasswordField from "../components/PasswordField";
 import { useAuth } from "../hooks/useAuth";
+import { isStrongPassword, passwordRequirementText } from "../utils/passwordValidation";
 
 const Register = () => {
   const { register } = useAuth();
@@ -20,6 +22,12 @@ const Register = () => {
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError("");
+
+    if (!isStrongPassword(formData.password)) {
+      setError(passwordRequirementText);
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -87,16 +95,16 @@ const Register = () => {
             <LockKeyhole className="h-4 w-4 text-lavender-500" />
             Password
           </label>
-          <input
+          <PasswordField
             id="password"
             name="password"
-            type="password"
             value={formData.password}
             onChange={handleChange}
-            minLength="6"
+            minLength="7"
             required
-            className="field-input"
+            autoComplete="new-password"
           />
+          <p className="mt-2 text-xs font-medium text-slate-500">{passwordRequirementText}</p>
         </div>
 
         <button

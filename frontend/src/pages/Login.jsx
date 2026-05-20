@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { LogIn, Mail, LockKeyhole } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import PasswordField from "../components/PasswordField";
 import { useAuth } from "../hooks/useAuth";
 
 const Login = () => {
@@ -72,14 +73,13 @@ const Login = () => {
             <LockKeyhole className="h-4 w-4 text-lavender-500" />
             Password
           </label>
-          <input
+          <PasswordField
             id="password"
             name="password"
-            type="password"
             value={formData.password}
             onChange={handleChange}
             required
-            className="field-input"
+            autoComplete="current-password"
           />
         </div>
 
