@@ -473,14 +473,7 @@ const Dashboard = () => {
             </p>
           </div>
           <div className="mt-6 flex flex-wrap gap-3">
-            <span className="status-pill">
-              <Shield className="h-3.5 w-3.5 text-lavender-500" />
-              Admin dashboard
-            </span>
-            <span className="status-pill">
-              <BarChart3 className="h-3.5 w-3.5 text-mint-500" />
-              {recentAdminActivity.length} latest events
-            </span>
+ 
           </div>
         </div>
 

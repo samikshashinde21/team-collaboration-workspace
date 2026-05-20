@@ -25,6 +25,7 @@ import AppFooter from "./AppFooter";
 import Loader from "./Loader";
 import PasswordField from "./PasswordField";
 import { useAuth } from "../hooks/useAuth";
+import { emailValidationMessage, isValidEmail, normalizeEmail } from "../utils/emailValidation";
 import { isStrongPassword, passwordRequirementText } from "../utils/passwordValidation";
 
 const formatInvitationTime = (value) => {
@@ -444,8 +445,8 @@ const AppLayout = () => {
     setProfileError("");
     setProfileMessage("");
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profileForm.email)) {
-      setProfileError("Enter a valid email address.");
+    if (!isValidEmail(profileForm.email)) {
+      setProfileError(emailValidationMessage);
       return;
     }
 
@@ -464,7 +465,10 @@ const AppLayout = () => {
     setIsProfileSaving(true);
 
     try {
-      const { data } = await api.patch("/users/me", profileForm);
+      const { data } = await api.patch("/users/me", {
+        ...profileForm,
+        email: normalizeEmail(profileForm.email),
+      });
       updateUser(data);
       setProfileForm((currentForm) => ({
         ...currentForm,

@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import Loader from "../components/Loader";
 import PasswordField from "../components/PasswordField";
 import { useAuth } from "../hooks/useAuth";
+import { emailValidationMessage, isValidEmail, normalizeEmail } from "../utils/emailValidation";
 import { isStrongPassword, passwordRequirementText } from "../utils/passwordValidation";
 
 const Register = () => {
@@ -24,6 +25,11 @@ const Register = () => {
     event.preventDefault();
     setError("");
 
+    if (!isValidEmail(formData.email)) {
+      setError(emailValidationMessage);
+      return;
+    }
+
     if (!isStrongPassword(formData.password)) {
       setError(passwordRequirementText);
       return;
@@ -32,7 +38,7 @@ const Register = () => {
     setIsSubmitting(true);
 
     try {
-      await register(formData);
+      await register({ ...formData, email: normalizeEmail(formData.email) });
       navigate("/dashboard", { replace: true });
     } catch (err) {
       setError(err.response?.data?.message || "Registration failed. Please try again.");

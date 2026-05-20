@@ -1087,9 +1087,10 @@ const RoomDetails = () => {
             {participants.length ? (
               participants.map((member) => {
                 const memberId = member._id || member.id;
+                const normalizedMemberId = memberId?.toString();
                 const isOnline =
                   member.status === "online" ||
-                  onlineUsers.some((onlineUser) => onlineUser.id === memberId);
+                  onlineUsers.some((onlineUser) => onlineUser.id?.toString() === normalizedMemberId);
 
                 return (
                   <div
