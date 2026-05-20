@@ -3,6 +3,7 @@ const Room = require("../models/Room");
 const RoomInvitation = require("../models/RoomInvitation");
 const User = require("../models/User");
 const { ACTIONS, createActivityLog } = require("../services/activityLogger");
+const { createNotification } = require("../services/notificationService");
 
 const formatInvitation = (invitation) => ({
   id: invitation._id.toString(),
@@ -157,6 +158,10 @@ const updateInvitation = async (req, res) => {
       return res.status(400).json({ message: "Status must be accepted or rejected." });
     }
 
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ message: "Valid invitation id is required." });
+    }
+
     const invitation = await RoomInvitation.findById(req.params.id);
 
     if (!invitation) {
@@ -172,20 +177,21 @@ const updateInvitation = async (req, res) => {
       return res.json(formatInvitation(populatedInvitation));
     }
 
-    invitation.status = status;
-    invitation.invitedUserRead = true;
-    invitation.inviterRead = false;
-    await invitation.save();
-
     const room = await Room.findById(invitation.room);
 
     if (!room) {
       return res.status(404).json({ message: "Room not found." });
     }
 
+    invitation.status = status;
+    invitation.invitedUserRead = true;
+    invitation.inviterRead = false;
+    await invitation.save();
+
     if (status === "accepted") {
       await Room.findByIdAndUpdate(room._id, {
         $addToSet: { assignedUsers: req.user._id, members: req.user._id },
+        $pull: { removedUsers: req.user._id },
       });
     }
 
@@ -207,6 +213,15 @@ const updateInvitation = async (req, res) => {
       room: room._id,
       action: status === "accepted" ? ACTIONS.INVITATION_ACCEPTED : ACTIONS.INVITATION_REJECTED,
       description: `${req.user.name} ${status} the invitation to ${room.name}`,
+    });
+    await createNotification({
+      io,
+      recipient: populatedInvitation.invitedBy._id,
+      type: status === "accepted" ? "INVITATION_ACCEPTED" : "INVITATION_REJECTED",
+      title: `Invitation ${status}`,
+      message: `${req.user.name} ${status} the invitation to ${room.name}.`,
+      room: room._id,
+      invitation: invitation._id,
     });
 
     res.json(formattedInvitation);

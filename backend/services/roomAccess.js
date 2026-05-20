@@ -10,11 +10,20 @@ const canAccessRoom = (user, room) => {
     return { allowed: true };
   }
 
+  const userId = user._id?.toString() || user.id?.toString();
+  const removedUserIds = normalizeIds(room.removedUsers || []);
+
+  if (removedUserIds.includes(userId)) {
+    return {
+      allowed: false,
+      message: "Access denied. You were removed from this room.",
+    };
+  }
+
   if (room.isOpenToEveryone ?? !room.isPrivate) {
     return { allowed: true };
   }
 
-  const userId = user._id?.toString() || user.id?.toString();
   const assignedUserIds = normalizeIds(room.assignedUsers || room.allowedUsers);
 
   if (assignedUserIds.includes(userId)) {

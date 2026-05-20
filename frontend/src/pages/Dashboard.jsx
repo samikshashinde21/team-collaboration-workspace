@@ -14,7 +14,7 @@ import {
   Users,
   Video,
 } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Area,
   AreaChart,
@@ -111,6 +111,7 @@ const MeetingBadge = ({ status }) => {
 
 const Dashboard = () => {
   const { user, token } = useAuth();
+  const navigate = useNavigate();
   const [activities, setActivities] = useState([]);
   const [adminStats, setAdminStats] = useState(null);
   const [adminError, setAdminError] = useState("");
@@ -343,7 +344,7 @@ const Dashboard = () => {
       label: "Pending invitations",
       value: adminStats?.pendingInvitations ?? 0,
       icon: MailQuestion,
-      action: () => window.dispatchEvent(new Event("open-notifications")),
+      to: "/invitations",
       accent: "from-amber-200/40 via-rose-200/30 to-white/20",
       iconAccent: "from-amber-200 to-rose-200",
       glow: "bg-amber-200/40",
@@ -443,7 +444,7 @@ const Dashboard = () => {
       label: "Pending Invitations",
       helper: `${pendingInvitations.length} awaiting response`,
       icon: MailQuestion,
-      action: () => window.dispatchEvent(new Event("open-notifications")),
+      to: "/invitations",
       accent: "from-amber-200/50 to-rose-100/35",
     },
     {
@@ -745,7 +746,7 @@ const Dashboard = () => {
           </div>
           <button
             type="button"
-            onClick={() => window.dispatchEvent(new Event("open-notifications"))}
+            onClick={() => navigate("/invitations")}
             className="rounded-2xl border border-white/70 bg-white/65 px-4 py-3 text-left shadow-sm backdrop-blur transition hover:-translate-y-0.5 hover:shadow-soft"
           >
             <p className="text-xs font-bold uppercase text-slate-500">Pending invitations</p>

@@ -7,6 +7,7 @@ const { clearRoomActivity, getRoomActivity } = require("./activityController");
 const { canAccessRoom, validateRoomPermissions } = require("../services/roomAccess");
 const { ACTIONS, createActivityLog } = require("../services/activityLogger");
 const { onlineUsersByRoom } = require("../services/presenceStore");
+const { createNotifications } = require("../services/notificationService");
 
 const formatInvitationNotification = (invitation) => ({
   id: invitation._id.toString(),
@@ -102,7 +103,8 @@ const findAccessibleRoom = async (req, roomId) => {
 
   const room = await Room.findById(roomId)
     .populate("members", "name email role")
-    .populate("assignedUsers", "name email role");
+    .populate("assignedUsers", "name email role")
+    .populate("removedUsers", "name email role");
 
   if (!room) {
     return { error: { status: 404, message: "Room not found" } };
@@ -154,6 +156,15 @@ const scheduleMeetingReminder = (io, room, meeting) => {
         roomId,
         meeting: formattedMeeting,
       });
+    });
+    await createNotifications({
+      io,
+      recipients: room.members || [],
+      type: "MEETING_STARTING_SOON",
+      title: `${currentMeeting.title || "Meeting"} starts in 10 minutes`,
+      message: "Please join on time.",
+      room: room._id,
+      meeting: currentMeeting._id,
     });
   }, Math.max(reminderDelay, 0));
 
@@ -269,6 +280,7 @@ const getRooms = async (req, res) => {
     const rooms = await Room.find()
       .populate("createdBy", "name email role")
       .populate("members", "name email role")
+      .populate("removedUsers", "name email role")
       .populate("assignedUsers", "name email role")
       .sort({ createdAt: -1 });
 
@@ -299,6 +311,7 @@ const getRoomById = async (req, res) => {
     const room = await Room.findById(req.params.id)
       .populate("createdBy", "name email role")
       .populate("members", "name email role")
+      .populate("removedUsers", "name email role")
       .populate("assignedUsers", "name email role");
 
     if (!room) {
@@ -428,6 +441,15 @@ const startMeeting = async (req, res) => {
       meeting: meeting._id,
       action: ACTIONS.MEETING_STARTED,
       description: `${req.user.name} started ${meeting.title || "a meeting"} in ${room.name}`,
+    });
+    await createNotifications({
+      io: req.app.get("io"),
+      recipients: (room.members || []).filter((member) => member.toString() !== req.user._id.toString()),
+      type: "MEETING_STARTED",
+      title: `${meeting.title || "Meeting"} is now live`,
+      message: `${req.user.name} started a meeting in ${room.name}.`,
+      room: room._id,
+      meeting: meeting._id,
     });
 
     res.status(201).json(formatMeeting(populatedMeeting));

@@ -118,11 +118,14 @@ const tabs = [
   { id: "activity", label: "Activity" },
 ];
 
-const ParticipantModerationMenu = ({ roomId, member }) => {
+const ParticipantModerationMenu = ({ roomId, member, onRemoved }) => {
   const socketRef = useRef(null);
   const menuRef = useRef(null);
   const { token } = useAuth();
   const [open, setOpen] = useState(false);
+  const [isRemoveConfirmOpen, setIsRemoveConfirmOpen] = useState(false);
+  const [isRemoving, setIsRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState("");
 
   useEffect(() => {
     if (!token) return;
@@ -159,17 +162,21 @@ const ParticipantModerationMenu = ({ roomId, member }) => {
       socketRef.current?.emit(event, payload, (response) => resolve(response));
     });
 
-  const handleMute = async () => {
-    const res = await emit("mute-user", { roomId, targetUserId: member._id || member.id });
-    setOpen(false);
-    if (!res?.ok) alert(res?.message || "Could not mute user");
-  };
-
   const handleKick = async () => {
-    if (!window.confirm(`Remove ${member.name} from the room?`)) return;
+    setIsRemoving(true);
+    setRemoveError("");
     const res = await emit("kick-user", { roomId, targetUserId: member._id || member.id });
+
+    if (!res?.ok) {
+      setRemoveError(res?.message || "Could not remove user");
+      setIsRemoving(false);
+      return;
+    }
+
+    setIsRemoving(false);
+    setIsRemoveConfirmOpen(false);
     setOpen(false);
-    if (!res?.ok) alert(res?.message || "Could not remove user");
+    onRemoved?.(member._id || member.id);
   };
 
   return (
@@ -184,17 +191,61 @@ const ParticipantModerationMenu = ({ roomId, member }) => {
         </button>
         {open && (
           <div className="absolute right-0 mt-2 w-48 rounded-md border bg-white shadow-md">
-            {!member.muted && (
-              <button onClick={handleMute} className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50">
-                Mute
-              </button>
-            )}
-            <button onClick={handleKick} className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50">
+            <button
+              type="button"
+              onClick={() => {
+                setRemoveError("");
+                setIsRemoveConfirmOpen(true);
+              }}
+              className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50"
+            >
               Remove
             </button>
           </div>
         )}
       </div>
+
+      {isRemoveConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-white/70 bg-white/95 p-6 shadow-lift backdrop-blur-2xl">
+            <div className="flex items-start gap-4">
+              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-red-50 text-red-600 ring-1 ring-red-100">
+                <Users className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <h2 className="text-lg font-black text-navy-900">Remove participant?</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Are you sure you want to remove {member.name} from this room? They will be notified.
+                </p>
+              </div>
+            </div>
+
+            {removeError && (
+              <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {removeError}
+              </div>
+            )}
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setIsRemoveConfirmOpen(false)}
+                className="btn-secondary"
+              >
+                No, keep user
+              </button>
+              <button
+                type="button"
+                onClick={handleKick}
+                disabled={isRemoving}
+                className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-soft transition hover:-translate-y-0.5 hover:bg-red-500 disabled:cursor-not-allowed disabled:bg-red-900"
+              >
+                {isRemoving ? "Removing..." : "Yes, remove"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -983,7 +1034,25 @@ const RoomDetails = () => {
 
                     {/* moderation menu for admins/moderators */}
                     {(user?.role === "admin" || user?.role === "moderator") && user?.id !== memberId && (
-                      <ParticipantModerationMenu roomId={room._id} member={member} />
+                      <ParticipantModerationMenu
+                        roomId={room._id}
+                        member={member}
+                        onRemoved={(removedMemberId) => {
+                          setRoom((currentRoom) =>
+                            currentRoom
+                              ? {
+                                  ...currentRoom,
+                                  assignedUsers: (currentRoom.assignedUsers || []).filter(
+                                    (assignedUser) => (assignedUser._id || assignedUser.id) !== removedMemberId
+                                  ),
+                                  members: (currentRoom.members || []).filter(
+                                    (roomMember) => (roomMember._id || roomMember.id) !== removedMemberId
+                                  ),
+                                }
+                              : currentRoom
+                          );
+                        }}
+                      />
                     )}
                   </div>
                 );

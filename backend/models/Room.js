@@ -33,6 +33,12 @@ const roomSchema = new mongoose.Schema(
         ref: "User",
       },
     ],
+    removedUsers: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
     mutedUsers: [
       {
         type: mongoose.Schema.Types.ObjectId,

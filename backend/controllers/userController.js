@@ -1,6 +1,7 @@
 const bcrypt = require("bcryptjs");
 const User = require("../models/User");
 const { ACTIONS, createActivityLog } = require("../services/activityLogger");
+const { createNotification } = require("../services/notificationService");
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const avatarPattern = /^data:image\/(png|jpe?g|webp);base64,[A-Za-z0-9+/=]+$/;
@@ -51,6 +52,13 @@ const updateUserRole = async (req, res) => {
       targetUser: user._id,
       action: ACTIONS.USER_ROLE_UPDATED,
       description: `${req.user.name} changed ${user.email} to ${role}`,
+    });
+    await createNotification({
+      io: req.app.get("io"),
+      recipient: user._id,
+      type: "ROLE_UPDATED",
+      title: "Your role was updated",
+      message: `${req.user.name} changed your role to ${role}.`,
     });
 
     res.json({
@@ -115,7 +123,9 @@ const updateMe = async (req, res) => {
       return res.status(400).json({ message: "Profile photo must be a PNG, JPG, or WebP image under 500 KB." });
     }
 
-    if (newPassword || confirmPassword) {
+    const passwordChanged = Boolean(newPassword || confirmPassword);
+
+    if (passwordChanged) {
       if (!newPassword || !isStrongPassword(newPassword)) {
         return res.status(400).json({
           message: "New password must be more than 6 characters and include uppercase, lowercase, and a number.",
@@ -133,6 +143,16 @@ const updateMe = async (req, res) => {
     user.email = normalizedEmail;
     user.avatarUrl = avatarUrl || "";
     await user.save();
+
+    await createNotification({
+      io: req.app.get("io"),
+      recipient: user._id,
+      type: passwordChanged ? "PASSWORD_CHANGED" : "PROFILE_UPDATED",
+      title: passwordChanged ? "Your password was updated successfully" : "Your profile was updated",
+      message: passwordChanged
+        ? "Your account password was changed."
+        : "Your profile information was saved.",
+    });
 
     res.json(formatUserProfile(user));
   } catch (error) {

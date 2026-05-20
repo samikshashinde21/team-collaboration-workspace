@@ -2,13 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import {
   Bell,
   Camera,
+  Check,
+  CheckCheck,
   ChevronDown,
+  ClipboardList,
   LayoutDashboard,
   LogOut,
   Save,
   Settings,
   Shield,
   Sparkles,
+  Trash2,
   UserCircle,
   Users,
   Video,
@@ -21,12 +25,6 @@ import PasswordField from "./PasswordField";
 import { useAuth } from "../hooks/useAuth";
 import { isStrongPassword, passwordRequirementText } from "../utils/passwordValidation";
 
-const roleBadgeClass = {
-  admin: "bg-rose-100 text-rose-700",
-  moderator: "bg-sky-100 text-sky-700",
-  user: "bg-slate-100 text-slate-700",
-};
-
 const formatInvitationTime = (value) => {
   return new Intl.DateTimeFormat("en", {
     dateStyle: "medium",
@@ -38,6 +36,12 @@ const roleBadgeClassName = {
   admin: "bg-rose-100 text-rose-700",
   moderator: "bg-sky-100 text-sky-700",
   user: "bg-slate-100 text-slate-700",
+};
+
+const invitationStatusClass = {
+  accepted: "bg-emerald-100 text-emerald-700",
+  pending: "bg-amber-100 text-amber-700",
+  rejected: "bg-slate-100 text-slate-600",
 };
 
 const getInitials = (name = "") =>
@@ -57,12 +61,15 @@ const AppLayout = () => {
   const { user, token, logout, updateUser } = useAuth();
   const navigate = useNavigate();
   const [invitations, setInvitations] = useState([]);
-  const [meetingNotifications, setMeetingNotifications] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const [unreadCounts, setUnreadCounts] = useState({ rooms: {}, meetings: {}, total: 0 });
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [isInvitationsOpen, setIsInvitationsOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isProfileSettingsOpen, setIsProfileSettingsOpen] = useState(false);
-  const [notificationError, setNotificationError] = useState("");
+  const [invitationError, setInvitationError] = useState("");
+  const [updatingInvitationId, setUpdatingInvitationId] = useState("");
   const [profileForm, setProfileForm] = useState({
     name: user?.name || "",
     email: user?.email || "",
@@ -73,6 +80,7 @@ const AppLayout = () => {
   const [profileMessage, setProfileMessage] = useState("");
   const [isProfileSaving, setIsProfileSaving] = useState(false);
   const notificationsRef = useRef(null);
+  const invitationsRef = useRef(null);
   const profileRef = useRef(null);
   const profileModalRef = useRef(null);
 
@@ -99,19 +107,24 @@ const AppLayout = () => {
 
     const fetchNotifications = async () => {
       try {
-        const [{ data: invitationsData }, { data: unreadData }] = await Promise.all([
+        const [{ data: invitationsData }, { data: unreadData }, { data: notificationsData }] = await Promise.all([
           api.get("/invitations/my"),
           api.get("/unread-counts"),
+          api.get("/notifications"),
         ]);
 
         if (isMounted) {
           setInvitations(invitationsData);
           setUnreadCounts(unreadData);
+          setNotifications(notificationsData.notifications || []);
+          setUnreadNotificationCount(notificationsData.unreadCount || 0);
         }
       } catch {
         if (isMounted) {
           setInvitations([]);
           setUnreadCounts({ rooms: {}, meetings: {}, total: 0 });
+          setNotifications([]);
+          setUnreadNotificationCount(0);
         }
       }
     };
@@ -172,6 +185,7 @@ const AppLayout = () => {
 
         return [invitation, ...currentInvitations];
       });
+      setIsInvitationsOpen(true);
     });
 
     socket.on("room-invitation-updated", (invitation) => {
@@ -197,21 +211,15 @@ const AppLayout = () => {
     socket.on("room-meeting-scheduled", ({ roomId, meeting }) => {
       if (!roomId || !meeting) return;
 
-      setMeetingNotifications((currentNotifications) => [
-        { id: `${roomId}:${meeting.id}:scheduled`, type: "scheduled", roomId, meeting, createdAt: new Date().toISOString() },
-        ...currentNotifications.filter((notification) => notification.id !== `${roomId}:${meeting.id}:scheduled`),
-      ].slice(0, 5));
       window.dispatchEvent(new CustomEvent("room-meeting-scheduled", { detail: { roomId, meeting } }));
     });
 
-    socket.on("room-meeting-reminder", ({ roomId, meeting }) => {
-      if (!roomId || !meeting) return;
-
-      setMeetingNotifications((currentNotifications) => [
-        { id: `${roomId}:${meeting.id}:reminder`, type: "reminder", roomId, meeting, createdAt: new Date().toISOString() },
-        ...currentNotifications.filter((notification) => notification.id !== `${roomId}:${meeting.id}:reminder`),
-      ].slice(0, 5));
-      setIsNotificationsOpen(true);
+    socket.on("notification-created", (notification) => {
+      setNotifications((currentNotifications) => [
+        notification,
+        ...currentNotifications.filter((item) => item.id !== notification.id),
+      ].slice(0, 30));
+      setUnreadNotificationCount((count) => count + 1);
     });
 
     socket.on("room-meeting-updated", ({ roomId, meeting }) => {
@@ -244,6 +252,24 @@ const AppLayout = () => {
       document.removeEventListener("mousedown", handleOutsideClick);
     };
   }, [isNotificationsOpen]);
+
+  useEffect(() => {
+    if (!isInvitationsOpen) {
+      return undefined;
+    }
+
+    const handleOutsideClick = (event) => {
+      if (invitationsRef.current && !invitationsRef.current.contains(event.target)) {
+        setIsInvitationsOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleOutsideClick);
+
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+    };
+  }, [isInvitationsOpen]);
 
   useEffect(() => {
     if (!isProfileOpen) {
@@ -293,27 +319,44 @@ const AppLayout = () => {
     };
   }, []);
 
+  const markNotificationRead = async (notification) => {
+    if (notification.readAt) return;
+
+    try {
+      const { data } = await api.patch(`/notifications/${notification.id}/read`);
+      setNotifications((currentNotifications) =>
+        currentNotifications.map((item) => (item.id === notification.id ? data : item))
+      );
+      setUnreadNotificationCount((count) => Math.max(count - 1, 0));
+    } catch {
+      // Keep notification visible if read update fails.
+    }
+  };
+
   const updateInvitationStatus = async (invitationId, status) => {
-    setNotificationError("");
+    setInvitationError("");
+    setUpdatingInvitationId(invitationId);
 
     try {
       const { data } = await api.patch(`/invitations/${invitationId}`, { status });
-
       setInvitations((currentInvitations) =>
-        currentInvitations.map((invitation) =>
-          invitation.id === invitationId ? data : invitation
-        )
+        currentInvitations.map((invitation) => (invitation.id === invitationId ? data : invitation))
       );
+      window.dispatchEvent(new CustomEvent("room-invitation-status-updated", { detail: data }));
 
-      if (status === "accepted") {
+      if (data.status === "accepted") {
         window.dispatchEvent(new Event("room-invitation-accepted"));
       }
-
-      window.dispatchEvent(
-        new CustomEvent("room-invitation-status-updated", { detail: data })
-      );
     } catch (err) {
-      setNotificationError(err.response?.data?.message || "Could not update invitation.");
+      const currentInvitation = invitations.find((invitation) => invitation.id === invitationId);
+
+      if (currentInvitation && currentInvitation.status !== "pending") {
+        setInvitationError("");
+      } else {
+        setInvitationError(err.response?.data?.message || "Could not update invitation.");
+      }
+    } finally {
+      setUpdatingInvitationId("");
     }
   };
 
@@ -323,22 +366,40 @@ const AppLayout = () => {
     const isUnread =
       (isIncoming && !invitation.invitedUserRead) || (isOutgoing && !invitation.inviterRead);
 
-    if (!isUnread) {
-      return invitation;
-    }
+    if (!isUnread) return;
 
     try {
       const { data } = await api.patch(`/invitations/${invitation.id}/read`);
-
       setInvitations((currentInvitations) =>
-        currentInvitations.map((currentInvitation) =>
-          currentInvitation.id === invitation.id ? data : currentInvitation
-        )
+        currentInvitations.map((item) => (item.id === invitation.id ? data : item))
       );
-
-      return data;
     } catch {
-      return invitation;
+      // Non-blocking read state.
+    }
+  };
+
+  const markAllNotificationsRead = async () => {
+    try {
+      await api.patch("/notifications/read-all");
+      setNotifications((currentNotifications) =>
+        currentNotifications.map((notification) => ({
+          ...notification,
+          readAt: notification.readAt || new Date().toISOString(),
+        }))
+      );
+      setUnreadNotificationCount(0);
+    } catch {
+      // Non-blocking action.
+    }
+  };
+
+  const clearNotifications = async () => {
+    try {
+      await api.delete("/notifications");
+      setNotifications([]);
+      setUnreadNotificationCount(0);
+    } catch {
+      // Non-blocking action.
     }
   };
 
@@ -409,33 +470,11 @@ const AppLayout = () => {
     }
   };
 
-  const openInvitationRoom = (invitation) => {
-    const isIncomingPending =
-      invitation.invitedUser?.id === user?.id && invitation.status === "pending";
-
-    if (!isIncomingPending) {
-      markInvitationRead(invitation);
-    }
-
-    if (!invitation.room?.id || invitation.status !== "accepted") {
-      return;
-    }
-
-    setIsNotificationsOpen(false);
-    navigate(`/rooms/${invitation.room.id}`);
-  };
-
-  const unreadInvitations = invitations.filter(
-    (invitation) =>
-      (invitation.invitedUser?.id === user?.id &&
-        invitation.status === "pending" &&
-        !invitation.invitedUserRead) ||
-      (invitation.invitedBy?.id === user?.id &&
-        invitation.status !== "pending" &&
-        !invitation.inviterRead)
-  );
   const totalUnread = unreadCounts.total || 0;
-  const notificationCount = unreadInvitations.length + meetingNotifications.length;
+  const notificationCount = unreadNotificationCount;
+  const pendingInvitationCount = invitations.filter(
+    (invitation) => invitation.invitedUser?.id === user?.id && invitation.status === "pending"
+  ).length;
 
   const linkClass = ({ isActive }) =>
     `inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-semibold transition ${
@@ -509,47 +548,101 @@ const AppLayout = () => {
                     <h2 className="font-bold text-navy-900">Notifications</h2>
                     <span className="status-pill">{notificationCount} new</span>
                   </div>
-
-                  {notificationError && (
-                    <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                      {notificationError}
-                    </div>
-                  )}
+                  <div className="mt-3 flex gap-2">
+                    <button type="button" onClick={markAllNotificationsRead} className="btn-secondary px-3 py-1.5 text-xs">
+                      <CheckCheck className="h-3.5 w-3.5" />
+                      Mark read
+                    </button>
+                    <button type="button" onClick={clearNotifications} className="btn-secondary px-3 py-1.5 text-xs">
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Clear
+                    </button>
+                  </div>
 
                   <div className="scroll-panel mt-3 max-h-96 space-y-3">
-                    {meetingNotifications.map((notification) => (
+                    {notifications.length ? notifications.map((notification) => (
                       <button
                         key={notification.id}
                         type="button"
                         onClick={() => {
-                          setMeetingNotifications((currentNotifications) =>
-                            currentNotifications.filter((item) => item.id !== notification.id)
-                          );
-                          setIsNotificationsOpen(false);
-                          navigate(`/rooms/${notification.roomId}?tab=meetings`);
+                          markNotificationRead(notification);
+                          if (notification.room?.id) {
+                            setIsNotificationsOpen(false);
+                            navigate(`/rooms/${notification.room.id}${notification.meeting ? "?tab=meetings" : ""}`);
+                          }
                         }}
-                        className="w-full rounded-2xl border border-mint-300/50 bg-mint-300/15 p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-soft"
+                        className={`w-full rounded-2xl border p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-soft ${
+                          notification.readAt
+                            ? "border-violet-100 bg-white/70"
+                            : "border-mint-300/50 bg-mint-300/15"
+                        }`}
                       >
-                        <p className="truncate text-sm font-semibold text-slate-900">
-                          {notification.meeting.title}
-                        </p>
-                        <p className="mt-1 text-xs text-slate-500">
-                          {notification.type === "reminder"
-                            ? "Starts in 10 minutes. Please join on time."
-                            : "Scheduled meeting in this room"}
-                        </p>
-                        <time className="mt-2 block text-xs text-slate-500" dateTime={notification.meeting.scheduledFor}>
-                          {notification.meeting.scheduledFor
-                            ? formatInvitationTime(notification.meeting.scheduledFor)
-                            : formatInvitationTime(notification.createdAt)}
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-slate-900">{notification.title}</p>
+                            <p className="mt-1 text-xs text-slate-500">{notification.message}</p>
+                          </div>
+                          {!notification.readAt && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-mint-500" />}
+                        </div>
+                        <time className="mt-2 block text-xs text-slate-500" dateTime={notification.createdAt}>
+                          {formatInvitationTime(notification.createdAt)}
                         </time>
                       </button>
-                    ))}
+                    )) : (
+                      <p className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                        No notifications yet.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
 
+            <div className="relative" ref={invitationsRef}>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsInvitationsOpen((isOpen) => !isOpen);
+                  setIsNotificationsOpen(false);
+                }}
+                className="relative grid h-11 w-11 place-items-center rounded-full border border-white/70 bg-white/75 text-navy-900 shadow-sm transition hover:-translate-y-0.5 hover:bg-white hover:shadow-soft"
+                aria-label="Invitations"
+              >
+                <ClipboardList className="h-5 w-5" />
+                {pendingInvitationCount > 0 && (
+                  <span className="absolute -right-1 -top-1 animate-pulseSoft rounded-full bg-amber-300 px-1.5 py-0.5 text-[10px] font-black text-navy-950 ring-2 ring-white">
+                    {pendingInvitationCount}
+                  </span>
+                )}
+              </button>
+
+              {isInvitationsOpen && (
+                <div className="absolute right-0 z-50 mt-3 w-96 max-w-[calc(100vw-2rem)] rounded-2xl border border-white/70 bg-white/90 p-4 shadow-lift backdrop-blur-2xl">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <h2 className="font-bold text-navy-900">Invitations</h2>
+                      <p className="mt-1 text-xs text-slate-500">Room requests and invite status</p>
+                    </div>
+                    <Link
+                      to="/invitations"
+                      onClick={() => setIsInvitationsOpen(false)}
+                      className="btn-secondary px-3 py-1.5 text-xs"
+                    >
+                      View all
+                    </Link>
+                  </div>
+
+                  {invitationError && (
+                    <div className="mt-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                      {invitationError}
+                    </div>
+                  )}
+
+                  <div className="scroll-panel mt-3 max-h-96 space-y-3">
                     {invitations.length ? (
                       invitations.map((invitation) => {
                         const isIncoming = invitation.invitedUser?.id === user?.id;
-                        const canOpenRoom = invitation.status === "accepted";
+                        const canRespond = isIncoming && invitation.status === "pending";
                         const isUnread =
                           (isIncoming && !invitation.invitedUserRead) ||
                           (!isIncoming && !invitation.inviterRead);
@@ -559,91 +652,65 @@ const AppLayout = () => {
                             key={invitation.id}
                             role="button"
                             tabIndex={0}
-                            onClick={() => openInvitationRoom(invitation)}
+                            onClick={() => markInvitationRead(invitation)}
                             onKeyDown={(event) => {
-                              if (event.key === "Enter") {
-                                openInvitationRoom(invitation);
-                              }
+                              if (event.key === "Enter") markInvitationRead(invitation);
                             }}
-                            className={`rounded-2xl border p-3 text-left transition ${
-                              isUnread ? "border-lavender-500 bg-lavender-200/25 shadow-soft" : "border-violet-100 bg-white/70"
-                            } ${
-                              canOpenRoom
-                                ? "cursor-pointer hover:-translate-y-0.5 hover:border-lavender-500 hover:shadow-soft"
-                                : "cursor-default"
+                            className={`rounded-2xl border p-3 text-left transition hover:-translate-y-0.5 hover:shadow-soft ${
+                              isUnread ? "border-amber-300 bg-amber-50/70 shadow-soft" : "border-violet-100 bg-white/70"
                             }`}
                           >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-semibold text-slate-900">
-                                {invitation.room?.name || "Room"}
-                              </p>
-                              <p className="mt-1 text-xs text-slate-500">
-                                {isIncoming
-                                  ? `From ${invitation.invitedBy?.name || "Unknown"}`
-                                  : `${invitation.invitedUser?.name || "User"} ${invitation.status} your invitation`}
-                              </p>
-                              <p
-                                className="mt-2 truncate text-sm text-slate-700"
-                                title={invitation.description || "No description provided."}
-                              >
-                                {invitation.description || "No description provided."}
-                              </p>
-                            </div>
-                            <span
-                              className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
-                                roleBadgeClass[invitation.invitedBy?.role] || roleBadgeClass.user
-                              }`}
-                            >
-                              {invitation.invitedBy?.role || "user"}
-                            </span>
-                          </div>
-                          <time className="mt-2 block text-xs text-slate-500" dateTime={invitation.createdAt}>
-                            {formatInvitationTime(invitation.createdAt)}
-                          </time>
-
-                          {invitation.status === "pending" && isIncoming ? (
-                            <div className="mt-3 flex gap-2">
-                              <button
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  updateInvitationStatus(invitation.id, "accepted");
-                                }}
-                              className="btn-primary px-3 py-1.5 text-xs"
-                              >
-                                Accept
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  updateInvitationStatus(invitation.id, "rejected");
-                                }}
-                                className="btn-secondary px-3 py-1.5 text-xs"
-                              >
-                                Reject
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="mt-3 flex items-center justify-between gap-2">
-                              <p
-                                className={`w-fit rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
-                                  invitation.status === "accepted"
-                                    ? "bg-emerald-100 text-emerald-700"
-                                    : invitation.status === "pending"
-                                      ? "bg-amber-100 text-amber-700"
-                                      : "bg-slate-100 text-slate-600"
-                                }`}
-                              >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-black text-slate-900">
+                                  {invitation.room?.name || "Room invitation"}
+                                </p>
+                                <p className="mt-1 text-xs text-slate-500">
+                                  {isIncoming
+                                    ? `Invited by ${invitation.invitedBy?.name || "Unknown"}`
+                                    : `${invitation.invitedUser?.name || "User"} is ${invitation.status}`}
+                                </p>
+                                <p className="mt-2 truncate text-sm text-slate-700">
+                                  {invitation.description || "No description provided."}
+                                </p>
+                              </div>
+                              <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-black capitalize ${invitationStatusClass[invitation.status] || invitationStatusClass.rejected}`}>
                                 {invitation.status}
-                              </p>
-                              {invitation.status === "pending" && (
-                                <span className="text-xs text-slate-500">Accept to open room</span>
-                              )}
+                              </span>
                             </div>
-                          )}
-                        </div>
+                            <time className="mt-2 block text-xs text-slate-500" dateTime={invitation.createdAt}>
+                              {formatInvitationTime(invitation.createdAt)}
+                            </time>
+
+                            {canRespond && (
+                              <div className="mt-3 flex gap-2">
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    updateInvitationStatus(invitation.id, "accepted");
+                                  }}
+                                  disabled={updatingInvitationId === invitation.id}
+                                  className="btn-primary px-3 py-1.5 text-xs"
+                                >
+                                  <Check className="h-3.5 w-3.5" />
+                                  Accept
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    updateInvitationStatus(invitation.id, "rejected");
+                                  }}
+                                  disabled={updatingInvitationId === invitation.id}
+                                  className="btn-secondary px-3 py-1.5 text-xs"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                  Reject
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         );
                       })
                     ) : (

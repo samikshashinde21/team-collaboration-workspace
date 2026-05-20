@@ -5,6 +5,7 @@ const MeetingMessage = require("../models/MeetingMessage");
 const Room = require("../models/Room");
 const User = require("../models/User");
 const { ACTIONS, createActivityLog } = require("../services/activityLogger");
+const { createNotification } = require("../services/notificationService");
 const { onlineUsersByRoom, callUsersByRoom } = require("../services/presenceStore");
 const { canAccessRoom } = require("../services/roomAccess");
 const {
@@ -134,6 +135,7 @@ const findRoomForAccess = (roomId) =>
   Room.findById(roomId)
     .populate("members", "name email role")
     .populate("assignedUsers", "name email role")
+    .populate("removedUsers", "name email role")
     .populate("mutedUsers", "name email role")
     .populate("screenShareBlocked", "name email role");
 
@@ -870,6 +872,14 @@ const socketHandler = (io) => {
           action: ACTIONS.USER_MUTED,
           description: `${socket.user.name} muted ${targetUser.name}`,
         });
+        await createNotification({
+          io,
+          recipient: targetUserId,
+          type: "MODERATION_ACTION",
+          title: "You were muted",
+          message: `${socket.user.name} muted you in this room.`,
+          room: roomId,
+        });
 
         return callback?.({ ok: true });
       } catch (err) {
@@ -928,19 +938,34 @@ const socketHandler = (io) => {
           return callback?.({ ok: false, message: "Cannot moderate an admin" });
         }
 
-        await Room.findByIdAndUpdate(roomId, { $pull: { members: targetUserId } });
+        const updatedRoom = await Room.findByIdAndUpdate(
+          roomId,
+          {
+            $pull: { members: targetUserId, assignedUsers: targetUserId },
+            $addToSet: { removedUsers: targetUserId },
+          },
+          { new: true }
+        ).populate("members", "name email role");
 
         // remove their sockets from the room and notify
         removeUserSocketsFromRoom(io, roomId, targetUserId);
 
         io.to(roomId).emit("user-kicked", { roomId, userId: targetUserId });
-        await emitRoomParticipants(io, roomId);
+        await emitRoomParticipants(io, roomId, updatedRoom);
         logActivity(io, {
           actor: socket.user._id,
           targetUser: targetUserId,
           room: roomId,
           action: ACTIONS.USER_KICKED,
           description: `${socket.user.name} removed ${targetUser.name} from the room`,
+        });
+        await createNotification({
+          io,
+          recipient: targetUserId,
+          type: "REMOVED_FROM_ROOM",
+          title: "You were removed from a room",
+          message: `${socket.user.name} removed you from this room.`,
+          room: roomId,
         });
 
         return callback?.({ ok: true });
@@ -982,6 +1007,14 @@ const socketHandler = (io) => {
           room: roomId,
           action: allow ? ACTIONS.SCREEN_SHARE_ALLOWED : ACTIONS.SCREEN_SHARE_BLOCKED,
           description: `${socket.user.name} ${allow ? "allowed" : "blocked"} screen sharing for ${targetUser.name}`,
+        });
+        await createNotification({
+          io,
+          recipient: targetUserId,
+          type: "MODERATION_ACTION",
+          title: allow ? "Screen sharing restored" : "Screen sharing blocked",
+          message: `${socket.user.name} ${allow ? "allowed" : "blocked"} screen sharing for you.`,
+          room: roomId,
         });
 
         return callback?.({ ok: true });
