@@ -581,7 +581,7 @@ const MeetingDetails = () => {
         setIsMicOn(false);
         setIsScreenSharing(false);
 
-        const socket = io(import.meta.env.VITE_SOCKET_URL)", { auth: { token } });
+        const socket = io(import.meta.env.VITE_SOCKET_URL, { auth: { token } });
         socketRef.current = socket;
         registerSocketEvents(socket);
 

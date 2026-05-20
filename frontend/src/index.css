@@ -29,6 +29,18 @@ textarea {
   font: inherit;
 }
 
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none;
+}
+
+input[type="password"]::-webkit-credentials-auto-fill-button,
+input[type="password"]::-webkit-caps-lock-indicator {
+  visibility: hidden;
+  display: none;
+  pointer-events: none;
+}
+
 @layer components {
   .app-surface {
     @apply relative overflow-hidden bg-canvas-50 text-navy-950;

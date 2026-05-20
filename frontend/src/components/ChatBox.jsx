@@ -27,7 +27,7 @@ const ChatBox = ({ roomId, onOnlineUsersChange, onParticipantsChange }) => {
       return undefined;
     }
 
-    const socket = io(import.meta.env.VITE_SOCKET_URL)", {
+    const socket = io(import.meta.env.VITE_SOCKET_URL, {
       auth: { token },
     });
 
