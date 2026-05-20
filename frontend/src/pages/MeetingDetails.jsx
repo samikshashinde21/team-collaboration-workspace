@@ -74,15 +74,12 @@ const MeetingDetails = () => {
   const { token, user } = useAuth();
   const navigate = useNavigate();
   const localVideoRef = useRef(null);
-  const remoteVideoRef = useRef(null);
-  const remoteAudioRef = useRef(null);
   const screenVideoRef = useRef(null);
   const socketRef = useRef(null);
-  const peerConnectionRef = useRef(null);
+  const peerConnectionsRef = useRef(new Map());
   const localStreamRef = useRef(null);
   const screenStreamRef = useRef(null);
   const cameraTrackRef = useRef(null);
-  const targetSocketIdRef = useRef(null);
   const typingTimeoutRef = useRef(null);
   const toastTimeoutsRef = useRef(new Map());
   const mediaStateRef = useRef({ micOn: false, cameraOn: false, screenSharing: false });
@@ -92,7 +89,7 @@ const MeetingDetails = () => {
   const speakingStateRef = useRef(false);
   const [meeting, setMeeting] = useState(null);
   const [localStream, setLocalStream] = useState(null);
-  const [remoteStream, setRemoteStream] = useState(null);
+  const [remoteStreams, setRemoteStreams] = useState({});
   const [screenStream, setScreenStream] = useState(null);
   const [participants, setParticipants] = useState([]);
   const [messages, setMessages] = useState([]);
@@ -180,11 +177,6 @@ const MeetingDetails = () => {
   }, [attachMediaStream, localStream, isCameraOn]);
 
   useEffect(() => {
-    attachMediaStream(remoteVideoRef.current, remoteStream);
-    attachMediaStream(remoteAudioRef.current, remoteStream);
-  }, [attachMediaStream, remoteStream]);
-
-  useEffect(() => {
     attachMediaStream(screenVideoRef.current, screenStream);
   }, [attachMediaStream, screenStream]);
 
@@ -231,16 +223,30 @@ const MeetingDetails = () => {
     return stream.getVideoTracks()[0] || null;
   };
 
-  const resetPeerConnection = useCallback(() => {
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.onicecandidate = null;
-      peerConnectionRef.current.ontrack = null;
-      peerConnectionRef.current.close();
-      peerConnectionRef.current = null;
+  const closePeerConnection = useCallback((socketId) => {
+    const peerConnection = peerConnectionsRef.current.get(socketId);
+
+    if (peerConnection) {
+      peerConnection.onicecandidate = null;
+      peerConnection.ontrack = null;
+      peerConnection.close();
+      peerConnectionsRef.current.delete(socketId);
     }
 
-    targetSocketIdRef.current = null;
-    setRemoteStream(null);
+    setRemoteStreams((currentStreams) => {
+      const { [socketId]: _removedStream, ...remainingStreams } = currentStreams;
+      return remainingStreams;
+    });
+  }, []);
+
+  const resetPeerConnections = useCallback(() => {
+    peerConnectionsRef.current.forEach((peerConnection) => {
+      peerConnection.onicecandidate = null;
+      peerConnection.ontrack = null;
+      peerConnection.close();
+    });
+    peerConnectionsRef.current.clear();
+    setRemoteStreams({});
   }, []);
 
   const cleanupMedia = useCallback(() => {
@@ -266,9 +272,9 @@ const MeetingDetails = () => {
     socketRef.current?.emit("leave-meeting", { roomId, meetingId });
     socketRef.current?.disconnect();
     socketRef.current = null;
-    resetPeerConnection();
+    resetPeerConnections();
     cleanupMedia();
-  }, [cleanupMedia, meetingId, resetPeerConnection, roomId]);
+  }, [cleanupMedia, meetingId, resetPeerConnections, roomId]);
 
   useEffect(() => {
     const audioTrack = localStream?.getAudioTracks()[0];
@@ -346,11 +352,14 @@ const MeetingDetails = () => {
 
   const createPeerConnection = useCallback(
     (targetSocketId) => {
-      resetPeerConnection();
-      targetSocketIdRef.current = targetSocketId;
+      const existingPeerConnection = peerConnectionsRef.current.get(targetSocketId);
+
+      if (existingPeerConnection && existingPeerConnection.connectionState !== "closed") {
+        return existingPeerConnection;
+      }
 
       const peerConnection = new RTCPeerConnection(peerConfig);
-      peerConnectionRef.current = peerConnection;
+      peerConnectionsRef.current.set(targetSocketId, peerConnection);
 
       localStreamRef.current?.getAudioTracks().forEach((track) => {
         peerConnection.addTrack(track, localStreamRef.current);
@@ -366,11 +375,11 @@ const MeetingDetails = () => {
       }
 
       peerConnection.onicecandidate = (event) => {
-        if (event.candidate && targetSocketIdRef.current) {
+        if (event.candidate) {
           socketRef.current?.emit("ice-candidate", {
             roomId,
             meetingId,
-            targetSocketId: targetSocketIdRef.current,
+            targetSocketId,
             candidate: event.candidate,
           });
         }
@@ -380,7 +389,10 @@ const MeetingDetails = () => {
         const [stream] = event.streams;
 
         if (stream) {
-          setRemoteStream(stream);
+          setRemoteStreams((currentStreams) => ({
+            ...currentStreams,
+            [targetSocketId]: stream,
+          }));
           setStatus("Connected to remote participant.");
         }
       };
@@ -392,32 +404,40 @@ const MeetingDetails = () => {
 
         if (["disconnected", "failed", "closed"].includes(peerConnection.connectionState)) {
           setStatus("Remote participant disconnected.");
+          if (peerConnection.connectionState === "closed") {
+            closePeerConnection(targetSocketId);
+          }
         }
       };
 
       return peerConnection;
     },
-    [meetingId, resetPeerConnection, roomId]
+    [closePeerConnection, meetingId, roomId]
   );
 
-  const renegotiatePeerConnection = async () => {
-    if (!peerConnectionRef.current || !targetSocketIdRef.current) return;
+  const renegotiatePeerConnections = async () => {
+    const peerEntries = Array.from(peerConnectionsRef.current.entries());
 
-    const offer = await peerConnectionRef.current.createOffer();
-    await peerConnectionRef.current.setLocalDescription(offer);
-    socketRef.current?.emit("offer", {
-      roomId,
-      meetingId,
-      targetSocketId: targetSocketIdRef.current,
-      offer,
-    });
+    await Promise.all(
+      peerEntries.map(async ([targetSocketId, peerConnection]) => {
+        if (peerConnection.signalingState !== "stable") return;
+
+        const offer = await peerConnection.createOffer();
+        await peerConnection.setLocalDescription(offer);
+        socketRef.current?.emit("offer", {
+          roomId,
+          meetingId,
+          targetSocketId,
+          offer,
+        });
+      })
+    );
   };
 
   const callParticipant = useCallback(
     async (targetSocketId, targetName = "participant") => {
       if (!targetSocketId) return;
 
-      targetSocketIdRef.current = targetSocketId;
       const peerConnection = createPeerConnection(targetSocketId);
       const offer = await peerConnection.createOffer();
       await peerConnection.setLocalDescription(offer);
@@ -474,12 +494,6 @@ const MeetingDetails = () => {
         setParticipants(users || []);
         setStatus(`${joinedUser?.name || "A participant"} joined the meeting.`);
         addToast(`${joinedUser?.name || "A participant"} joined the meeting`);
-
-        if (mediaStateRef.current.screenSharing) {
-          callParticipant(socketId, joinedUser?.name || "participant").catch(() => {
-            setError("Could not connect the screen share to the new participant.");
-          });
-        }
       });
 
       socket.on("meeting-participants", ({ users }) => {
@@ -489,19 +503,13 @@ const MeetingDetails = () => {
       socket.on("call-user-left", ({ socketId, user: leftUser, users }) => {
         setParticipants(users || []);
         addToast(`${leftUser?.name || "A participant"} left the meeting`);
-
-        if (!targetSocketIdRef.current || targetSocketIdRef.current === socketId) {
-          resetPeerConnection();
-          setStatus("Remote participant left the meeting.");
-        }
+        closePeerConnection(socketId);
+        setStatus("Remote participant left the meeting.");
       });
 
       socket.on("offer", async ({ offer, fromSocketId, user: remoteUser }) => {
         try {
-          const peerConnection =
-            peerConnectionRef.current && targetSocketIdRef.current === fromSocketId
-              ? peerConnectionRef.current
-              : createPeerConnection(fromSocketId);
+          const peerConnection = createPeerConnection(fromSocketId);
 
           if (peerConnection.signalingState === "have-local-offer") {
             await peerConnection.setLocalDescription({ type: "rollback" });
@@ -524,23 +532,27 @@ const MeetingDetails = () => {
         }
       });
 
-      socket.on("answer", async ({ answer }) => {
+      socket.on("answer", async ({ answer, fromSocketId }) => {
         try {
-          if (peerConnectionRef.current?.signalingState !== "have-local-offer") {
+          const peerConnection = peerConnectionsRef.current.get(fromSocketId);
+
+          if (peerConnection?.signalingState !== "have-local-offer") {
             return;
           }
 
-          await peerConnectionRef.current?.setRemoteDescription(new RTCSessionDescription(answer));
+          await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
           setStatus("Answer received. Connecting...");
         } catch {
           setError("Could not complete the meeting answer.");
         }
       });
 
-      socket.on("ice-candidate", async ({ candidate }) => {
+      socket.on("ice-candidate", async ({ candidate, fromSocketId }) => {
         try {
-          if (peerConnectionRef.current && candidate) {
-            await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+          const peerConnection = peerConnectionsRef.current.get(fromSocketId);
+
+          if (peerConnection && candidate) {
+            await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
           }
         } catch {
           setError("Could not add network candidate for the meeting.");
@@ -591,16 +603,15 @@ const MeetingDetails = () => {
       socket.on("meeting-force-camera-off", ({ message }) => {
         const videoTrack = localStreamRef.current?.getVideoTracks()[0];
         if (videoTrack) {
-          const sender = peerConnectionRef.current
-            ?.getSenders()
-            .find((peerSender) => peerSender.track === videoTrack);
-
-          sender?.replaceTrack(null);
+          peerConnectionsRef.current.forEach((peerConnection) => {
+            const sender = peerConnection.getSenders().find((peerSender) => peerSender.track === videoTrack);
+            sender?.replaceTrack(null);
+          });
           videoTrack.stop();
           localStreamRef.current.removeTrack(videoTrack);
           cameraTrackRef.current = null;
           setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
-          renegotiatePeerConnection().catch(() => {});
+          renegotiatePeerConnections().catch(() => {});
         }
         setIsCameraOn(false);
         setSelfParticipantState({ cameraOn: false });
@@ -609,11 +620,12 @@ const MeetingDetails = () => {
       });
 
       socket.on("meeting-force-screen-share-stop", async ({ message }) => {
-        const sender = peerConnectionRef.current?.getSenders().find((peerSender) => peerSender.track?.kind === "video");
-
-        if (sender) {
-          await sender.replaceTrack(cameraTrackRef.current || null);
-        }
+        await Promise.all(
+          Array.from(peerConnectionsRef.current.values()).map(async (peerConnection) => {
+            const sender = peerConnection.getSenders().find((peerSender) => peerSender.track?.kind === "video");
+            await sender?.replaceTrack(cameraTrackRef.current || null);
+          })
+        );
 
         screenStreamRef.current?.getTracks().forEach((track) => track.stop());
         screenStreamRef.current = null;
@@ -621,7 +633,7 @@ const MeetingDetails = () => {
         setIsScreenSharing(false);
         setSelfParticipantState({ screenSharing: false });
         emitMediaState({ screenSharing: false });
-        renegotiatePeerConnection().catch(() => {});
+        renegotiatePeerConnections().catch(() => {});
         addToast(message || "Your screen sharing was stopped");
       });
 
@@ -641,7 +653,7 @@ const MeetingDetails = () => {
         navigate(`/rooms/${roomId}`, { replace: true });
       });
     },
-    [addToast, callParticipant, createPeerConnection, emitMediaState, leaveSocketMeeting, meetingId, navigate, resetPeerConnection, roomId, setSelfParticipantState, user?.id]
+    [addToast, callParticipant, closePeerConnection, createPeerConnection, emitMediaState, leaveSocketMeeting, meetingId, navigate, roomId, setSelfParticipantState, user?.id]
   );
 
   useEffect(() => {
@@ -707,20 +719,16 @@ const MeetingDetails = () => {
             ]);
             emitMediaState({ micOn: false, cameraOn: false, screenSharing: false });
 
-            const existingUser =
-              existingUsers.find((existingParticipant) => existingParticipant.screenSharing) || existingUsers[0];
-
-            if (!existingUser) {
+            if (!existingUsers.length) {
               setStatus("Waiting for another participant...");
               return;
             }
 
-            if (existingUser.screenSharing) {
-              setStatus(`Waiting for ${existingUser.name || "presenter"}'s screen share...`);
-              return;
-            }
-
-            await callParticipant(existingUser.socketId, existingUser.name || "participant");
+            await Promise.all(
+              existingUsers.map((existingUser) =>
+                callParticipant(existingUser.socketId, existingUser.name || "participant")
+              )
+            );
           });
         });
       } catch (err) {
@@ -754,13 +762,12 @@ const MeetingDetails = () => {
     const videoTrack = localStreamRef.current?.getVideoTracks()[0];
 
     if (videoTrack) {
-      const sender = peerConnectionRef.current
-        ?.getSenders()
-        .find((peerSender) => peerSender.track === videoTrack);
-
-      if (sender) {
-        await sender.replaceTrack(null);
-      }
+      await Promise.all(
+        Array.from(peerConnectionsRef.current.values()).map(async (peerConnection) => {
+          const sender = peerConnection.getSenders().find((peerSender) => peerSender.track === videoTrack);
+          await sender?.replaceTrack(null);
+        })
+      );
 
       videoTrack.stop();
       localStreamRef.current.removeTrack(videoTrack);
@@ -768,7 +775,7 @@ const MeetingDetails = () => {
       setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
       setIsCameraOn(false);
       updateLocalParticipantState({ cameraOn: false });
-      renegotiatePeerConnection().catch(() => {});
+      renegotiatePeerConnections().catch(() => {});
       return;
     }
 
@@ -785,10 +792,12 @@ const MeetingDetails = () => {
       setIsCameraOn(true);
       updateLocalParticipantState({ cameraOn: true });
 
-      if (peerConnectionRef.current) {
-        peerConnectionRef.current.addTrack(cameraTrack, localStreamRef.current);
-        await renegotiatePeerConnection();
-      }
+      peerConnectionsRef.current.forEach((peerConnection) => {
+        if (!peerConnection.getSenders().some((sender) => sender.track === cameraTrack)) {
+          peerConnection.addTrack(cameraTrack, localStreamRef.current);
+        }
+      });
+      await renegotiatePeerConnections();
     } catch {
       setError("Camera is not available on this device or permission was denied.");
       updateLocalParticipantState({ cameraOn: false });
@@ -815,10 +824,12 @@ const MeetingDetails = () => {
         localStreamRef.current.addTrack(audioTrack);
         setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
 
-        if (peerConnectionRef.current) {
-          peerConnectionRef.current.addTrack(audioTrack, localStreamRef.current);
-          await renegotiatePeerConnection();
-        }
+        peerConnectionsRef.current.forEach((peerConnection) => {
+          if (!peerConnection.getSenders().some((sender) => sender.track === audioTrack)) {
+            peerConnection.addTrack(audioTrack, localStreamRef.current);
+          }
+        });
+        await renegotiatePeerConnections();
       } catch {
         setError("Microphone is not available on this device or permission was denied.");
         updateLocalParticipantState({ micOn: false });
@@ -834,11 +845,10 @@ const MeetingDetails = () => {
   };
 
   const stopScreenShare = useCallback(() => {
-    const sender = peerConnectionRef.current?.getSenders().find((peerSender) => peerSender.track?.kind === "video");
-
-    if (sender) {
-      sender.replaceTrack(cameraTrackRef.current || null);
-    }
+    peerConnectionsRef.current.forEach((peerConnection) => {
+      const sender = peerConnection.getSenders().find((peerSender) => peerSender.track?.kind === "video");
+      sender?.replaceTrack(cameraTrackRef.current || null);
+    });
 
     screenStreamRef.current?.getTracks().forEach((track) => track.stop());
     screenStreamRef.current = null;
@@ -846,7 +856,7 @@ const MeetingDetails = () => {
     setIsScreenSharing(false);
     updateLocalParticipantState({ screenSharing: false });
     socketRef.current?.emit("screen-share-stop", { roomId, meetingId });
-    renegotiatePeerConnection().catch(() => {});
+    renegotiatePeerConnections().catch(() => {});
   }, [meetingId, roomId]);
 
   const toggleScreenShare = async () => {
@@ -858,13 +868,17 @@ const MeetingDetails = () => {
     try {
       const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
       const screenTrack = screenStream.getVideoTracks()[0];
-      const sender = peerConnectionRef.current?.getSenders().find((peerSender) => peerSender.track?.kind === "video");
+      await Promise.all(
+        Array.from(peerConnectionsRef.current.values()).map(async (peerConnection) => {
+          const sender = peerConnection.getSenders().find((peerSender) => peerSender.track?.kind === "video");
 
-      if (sender && screenTrack) {
-        await sender.replaceTrack(screenTrack);
-      } else if (peerConnectionRef.current && screenTrack) {
-        peerConnectionRef.current.addTrack(screenTrack, screenStream);
-      }
+          if (sender && screenTrack) {
+            await sender.replaceTrack(screenTrack);
+          } else if (screenTrack) {
+            peerConnection.addTrack(screenTrack, screenStream);
+          }
+        })
+      );
 
       screenTrack.onended = stopScreenShare;
       screenStreamRef.current = screenStream;
@@ -872,7 +886,7 @@ const MeetingDetails = () => {
       setIsScreenSharing(true);
       updateLocalParticipantState({ screenSharing: true });
       socketRef.current?.emit("screen-share-start", { roomId, meetingId });
-      await renegotiatePeerConnection();
+      await renegotiatePeerConnections();
     } catch {
       setError("Could not start screen sharing.");
     }
@@ -983,7 +997,8 @@ const MeetingDetails = () => {
 
   const renderParticipantMedia = (participant, { compact = false, presentationStage = false } = {}) => {
     const isSelf = participant.id === user?.id;
-    const isRemotePeer = !isSelf && participant.socketId === targetSocketIdRef.current;
+    const remoteStream = participant.socketId ? remoteStreams[participant.socketId] : null;
+    const isRemotePeer = !isSelf && !!remoteStream;
     const hasLocalScreen = isSelf && participant.screenSharing && screenStream;
     const hasRemoteFeed = isRemotePeer && remoteStream && (participant.cameraOn || participant.screenSharing);
     const hasLocalVideo = !presentationStage && isSelf && isCameraOn && localStream?.getVideoTracks().length;
@@ -1012,10 +1027,7 @@ const MeetingDetails = () => {
     if (presentationStage && hasRemoteFeed) {
       return (
         <video
-          ref={(element) => {
-            remoteVideoRef.current = element;
-            attachMediaStream(element, remoteStream);
-          }}
+          ref={(element) => attachMediaStream(element, remoteStream)}
           autoPlay
           playsInline
           muted
@@ -1042,10 +1054,7 @@ const MeetingDetails = () => {
     if (hasRemoteVideo) {
       return (
         <video
-          ref={(element) => {
-            remoteVideoRef.current = element;
-            attachMediaStream(element, remoteStream);
-          }}
+          ref={(element) => attachMediaStream(element, remoteStream)}
           autoPlay
           playsInline
           muted
@@ -1066,14 +1075,14 @@ const MeetingDetails = () => {
 
   const renderParticipantTile = (participant, { compact = false } = {}) => {
     const isSelf = participant.id === user?.id;
-    const isFocused = isSelf || participant.socketId === targetSocketIdRef.current;
+    const isFocused = isSelf || !!remoteStreams[participant.socketId];
     const isSpeaking = participant.live && participant.micOn && participant.speaking;
 
     return (
       <article
         key={participant.id}
         className={`relative grid overflow-hidden rounded-2xl border bg-slate-950 shadow-lift transition-all duration-300 ${
-          compact ? "h-28 min-w-[170px] snap-start" : "min-h-[190px]"
+          compact ? "h-28 min-w-[170px] snap-start" : "min-h-[180px]"
         } ${
           isSpeaking
             ? "border-mint-300 ring-4 ring-mint-300/25"
@@ -1143,14 +1152,9 @@ const MeetingDetails = () => {
 
   return (
     <section className="fixed inset-0 z-50 flex overflow-hidden bg-navy-950 text-white">
-      <audio
-        ref={(element) => {
-          remoteAudioRef.current = element;
-          attachMediaStream(element, remoteStream);
-        }}
-        autoPlay
-        className="hidden"
-      />
+      {Object.entries(remoteStreams).map(([socketId, stream]) => (
+        <audio key={socketId} ref={(element) => attachMediaStream(element, stream)} autoPlay className="hidden" />
+      ))}
       <div className="pointer-events-none absolute inset-0 bg-soft-grid opacity-20 [background-size:36px_36px]" />
       <div className="relative z-10 flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/5 px-4 py-3 backdrop-blur-2xl md:px-5">
@@ -1178,7 +1182,7 @@ const MeetingDetails = () => {
             renderPresentationStage()
           ) : (
             <div
-              className={`grid auto-rows-fr gap-3 transition-all duration-300 ${
+              className={`grid content-start gap-3 [grid-auto-rows:minmax(180px,min(32vh,260px))] transition-all duration-300 ${
                 visibleParticipants.length <= 1
                   ? "grid-cols-1"
                   : visibleParticipants.length <= 4
