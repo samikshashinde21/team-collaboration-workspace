@@ -428,66 +428,70 @@ const canCreateRoom = user?.role === "admin";
       )}
 
       {isCreateOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-navy-950/55 px-4 backdrop-blur-sm">
-          <div className="w-full max-w-lg rounded-2xl border border-white/70 bg-white/90 p-6 shadow-lift backdrop-blur-2xl">
-            <div className="mb-5 flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-xl font-semibold">Create room</h2>
-                <p className="mt-1 text-sm text-slate-600">Set up a room for collaboration.</p>
-              </div>
-              <button
-                type="button"
-                onClick={closeCreateModal}
-                className="btn-secondary px-3 py-1.5"
-              >
-                Close
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateRoom} className="space-y-4">
-              <div>
-                <label htmlFor="name" className="block text-sm font-medium text-slate-700">
-                  Room name
-                </label>
-                <input
-                  id="name"
-                  name="name"
-                  type="text"
-                  value={formData.name}
-                  onChange={handleChange}
-                  required
-                  className="field-input"
-                />
+        <div className="fixed inset-0 z-50 overflow-y-auto overflow-x-hidden bg-navy-950/55 px-3 py-4 backdrop-blur-sm overscroll-contain sm:px-4 sm:py-6">
+          <div className="flex min-h-full items-start justify-center sm:items-center">
+            <div className="flex max-h-[90vh] w-full max-w-[min(32rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl border border-white/70 bg-white/95 shadow-lift backdrop-blur-2xl">
+              <div className="shrink-0 border-b border-violet-100/80 px-5 py-4 sm:px-6">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <h2 className="text-xl font-semibold">Create room</h2>
+                    <p className="mt-1 text-sm text-slate-600">Set up a room for collaboration.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeCreateModal}
+                    className="btn-secondary shrink-0 px-3 py-1.5"
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
 
-              <div>
-                <label htmlFor="description" className="block text-sm font-medium text-slate-700">
-                  Description
-                </label>
-                <textarea
-                  id="description"
-                  name="description"
-                  value={formData.description}
-                  onChange={handleChange}
-                  rows="4"
-                  className="field-input"
-                />
-              </div>
+              <form onSubmit={handleCreateRoom} className="flex min-h-0 flex-1 flex-col">
+                <div className="scroll-panel min-h-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden px-5 py-5 scroll-smooth overscroll-contain sm:px-6">
+                  <div>
+                    <label htmlFor="name" className="block text-sm font-medium text-slate-700">
+                      Room name
+                    </label>
+                    <input
+                      id="name"
+                      name="name"
+                      type="text"
+                      value={formData.name}
+                      onChange={handleChange}
+                      required
+                      className="field-input"
+                    />
+                  </div>
 
-              <label className="flex items-center gap-3 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700">
-                <input
-                  name="isOpenToEveryone"
-                  type="checkbox"
-                  checked={formData.isOpenToEveryone}
-                  onChange={handleChange}
-                  className="h-4 w-4 rounded border-slate-300"
-                />
-                Open room for everyone
-              </label>
+                  <div>
+                    <label htmlFor="description" className="block text-sm font-medium text-slate-700">
+                      Description
+                    </label>
+                    <textarea
+                      id="description"
+                      name="description"
+                      value={formData.description}
+                      onChange={handleChange}
+                      rows="4"
+                      className="field-input"
+                    />
+                  </div>
 
-              {!formData.isOpenToEveryone && (
-                <div className="max-h-96 overflow-y-auto rounded-md border border-slate-200 p-4">
-                  <div className="flex items-center justify-between gap-3">
+                  <label className="flex items-center gap-3 rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                    <input
+                      name="isOpenToEveryone"
+                      type="checkbox"
+                      checked={formData.isOpenToEveryone}
+                      onChange={handleChange}
+                      className="h-4 w-4 rounded border-slate-300"
+                    />
+                    <span className="min-w-0">Open room for everyone</span>
+                  </label>
+
+                  {!formData.isOpenToEveryone && (
+                    <div className="min-w-0 rounded-md border border-slate-200 p-4">
+                      <div className="flex items-center justify-between gap-3">
                     <div>
                       <h3 className="text-sm font-semibold text-slate-900">Assign Users</h3>
                       <p className="mt-1 text-sm text-slate-500">
@@ -524,7 +528,7 @@ const canCreateRoom = user?.role === "admin";
                             </span>
                           </summary>
 
-                          <div className="max-h-44 space-y-2 overflow-y-scroll border-t border-slate-100 p-3">
+                          <div className="scroll-panel max-h-40 space-y-2 overflow-y-auto overflow-x-hidden border-t border-slate-100 p-3 overscroll-contain">
                             {sectionUsers.length ? (
                               sectionUsers.map((member) => {
                                 const isSelected =
@@ -570,18 +574,22 @@ const canCreateRoom = user?.role === "admin";
                       );
                     })}
                   </div>
+                    </div>
+                  )}
                 </div>
-              )}
 
-              <button
-                type="submit"
-                disabled={isCreating}
-                className="btn-primary w-full"
-              >
-                {isCreating ? <Loader label="Creating room" size="sm" /> : <Plus className="h-4 w-4" />}
-                Create room
-              </button>
-            </form>
+                <div className="shrink-0 border-t border-violet-100/80 bg-white/95 px-5 py-4 sm:px-6">
+                  <button
+                    type="submit"
+                    disabled={isCreating}
+                    className="btn-primary w-full"
+                  >
+                    {isCreating ? <Loader label="Creating room" size="sm" /> : <Plus className="h-4 w-4" />}
+                    Create room
+                  </button>
+                </div>
+              </form>
+            </div>
           </div>
         </div>
       )}
