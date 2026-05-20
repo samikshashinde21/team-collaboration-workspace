@@ -220,6 +220,15 @@ const MeetingDetails = () => {
     }
   };
 
+  const getMicrophoneTrack = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      return null;
+    }
+
+    const stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+    return stream.getAudioTracks()[0] || null;
+  };
+
   const getCameraTrack = async () => {
     const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
     return stream.getVideoTracks()[0] || null;
@@ -789,16 +798,40 @@ const MeetingDetails = () => {
     }
   };
 
-  const toggleMicrophone = () => {
-    const audioTrack = localStreamRef.current?.getAudioTracks()[0];
+  const toggleMicrophone = async () => {
+    let audioTrack = localStreamRef.current?.getAudioTracks()[0];
 
     if (!audioTrack) {
-      setError("Microphone is not available on this device or permission was denied.");
-      updateLocalParticipantState({ micOn: false });
-      return;
+      try {
+        audioTrack = await getMicrophoneTrack();
+
+        if (!audioTrack) {
+          throw new Error("No microphone track");
+        }
+
+        audioTrack.enabled = true;
+
+        if (!localStreamRef.current) {
+          localStreamRef.current = new MediaStream();
+        }
+
+        localStreamRef.current.addTrack(audioTrack);
+        setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
+
+        if (peerConnectionRef.current) {
+          peerConnectionRef.current.addTrack(audioTrack, localStreamRef.current);
+          await renegotiatePeerConnection();
+        }
+      } catch {
+        setError("Microphone is not available on this device or permission was denied.");
+        updateLocalParticipantState({ micOn: false });
+        return;
+      }
+    } else {
+      audioTrack.enabled = !audioTrack.enabled;
     }
 
-    audioTrack.enabled = !audioTrack.enabled;
+    setError("");
     setIsMicOn(audioTrack.enabled);
     updateLocalParticipantState({ micOn: audioTrack.enabled });
   };
