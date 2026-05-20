@@ -28,13 +28,26 @@ const authRateLimitMax = Number(process.env.AUTH_RATE_LIMIT_MAX) || 50;
 
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || "http://localhost:5173",
+origin: [
+  "http://localhost:5173",
+  "https://team-collaboration-workspace.vercel.app",
+],
     methods: ["GET", "POST", "PATCH", "DELETE"],
   },
 });
 
 app.use(express.json({ limit: "1mb" }));
-app.use(cors({ origin: process.env.CLIENT_URL || "http://localhost:5173" }));
+app.use(
+  cors({
+    origin: [
+      "http://localhost:5173",
+      "https://team-collaboration-workspace.vercel.app",
+    ],
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
 app.use(helmet());
 
 app.set("trust proxy", Number(process.env.TRUST_PROXY) || 1);
