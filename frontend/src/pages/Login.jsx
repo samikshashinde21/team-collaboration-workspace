@@ -7,6 +7,22 @@ import PasswordField from "../components/PasswordField";
 import { useAuth } from "../hooks/useAuth";
 import { emailValidationMessage, isValidEmail, normalizeEmail } from "../utils/emailValidation";
 
+const getDisplayResetUrl = (resetUrl = "") => {
+  if (!resetUrl) return "";
+
+  try {
+    const url = new URL(resetUrl);
+
+    if (url.hostname === "localhost" || url.hostname === "127.0.0.1") {
+      return `${window.location.origin}${url.pathname}${url.search}${url.hash}`;
+    }
+
+    return resetUrl;
+  } catch {
+    return resetUrl;
+  }
+};
+
 const Login = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
@@ -70,9 +86,10 @@ const Login = () => {
       const { data } = await api.post("/auth/forgot-password", {
         email: normalizeEmail(forgotEmail),
       });
+      const resetUrl = getDisplayResetUrl(data.resetUrl);
       setForgotMessage(
-        data.resetUrl
-          ? `Reset link: ${data.resetUrl}`
+        resetUrl
+          ? `Reset link: ${resetUrl}`
           : data.message || "If an account exists, password reset instructions will be sent."
       );
     } catch (err) {
