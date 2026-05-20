@@ -21,6 +21,7 @@ import {
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
 import api from "../api/api";
+import AppFooter from "./AppFooter";
 import Loader from "./Loader";
 import PasswordField from "./PasswordField";
 import { useAuth } from "../hooks/useAuth";
@@ -972,6 +973,7 @@ const AppLayout = () => {
       <main className="app-content mx-auto max-w-6xl px-4 py-8">
         <Outlet />
       </main>
+      <AppFooter className="pb-5" />
     </div>
   );
 };

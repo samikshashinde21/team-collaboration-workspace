@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { LogIn, Mail, LockKeyhole } from "lucide-react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import Loader from "../components/Loader";
 import PasswordField from "../components/PasswordField";
 import { useAuth } from "../hooks/useAuth";
@@ -8,7 +8,6 @@ import { useAuth } from "../hooks/useAuth";
 const Login = () => {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
   const [formData, setFormData] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -27,7 +26,7 @@ const Login = () => {
 
     try {
       await login(formData);
-      navigate(location.state?.from?.pathname || "/dashboard", { replace: true });
+      navigate("/dashboard", { replace: true });
     } catch (err) {
       setError(err.response?.data?.message || "Login failed. Please try again.");
     } finally {

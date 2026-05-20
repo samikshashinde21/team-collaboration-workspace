@@ -1,5 +1,6 @@
 import { Link, Outlet } from "react-router-dom";
 import { Sparkles } from "lucide-react";
+import AppFooter from "./AppFooter";
 
 const AuthLayout = () => {
   return (
@@ -15,6 +16,7 @@ const AuthLayout = () => {
         </Link>
         <Outlet />
       </div>
+      <AppFooter className="mt-8" />
     </div>
   );
 };

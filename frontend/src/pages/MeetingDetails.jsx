@@ -16,6 +16,7 @@ import {
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { io } from "socket.io-client";
 import api from "../api/api";
+import AppFooter from "../components/AppFooter";
 import { useAuth } from "../hooks/useAuth";
 
 const peerConfig = {
@@ -1181,6 +1182,7 @@ const MeetingDetails = () => {
           <PhoneOff className="h-5 w-5" />
         </button>
       </div>
+      <AppFooter className="fixed bottom-1 left-0 right-0 z-30 text-slate-400" />
     </section>
   );
 };

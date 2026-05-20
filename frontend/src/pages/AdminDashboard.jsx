@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { Activity, PhoneCall, Shield, Users, Video } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Activity, PhoneCall, Users, Video } from "lucide-react";
 import api from "../api/api";
 import Loader from "../components/Loader";
 
@@ -117,14 +116,6 @@ const AdminDashboard = () => {
           )}
         </div>
       </div>
-
-      <Link to="/admin/users" className="premium-card block p-5">
-        <h2 className="inline-flex items-center gap-2 font-black text-navy-900">
-          <Shield className="h-4 w-4" />
-          Manage users
-        </h2>
-        <p className="mt-2 text-sm text-slate-600">View users and update roles.</p>
-      </Link>
     </section>
   );
 };

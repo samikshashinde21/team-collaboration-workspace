@@ -449,10 +449,11 @@ const Dashboard = () => {
       label: "Live Meeting",
       helper: liveMeeting ? `${liveMeeting.roomName} is live now` : "No live meeting right now",
       icon: Radio,
-      to: liveMeeting ? `/rooms/${liveMeeting.roomId}/meeting/${liveMeeting.id}` : "/rooms",
+      to: "/rooms",
       accent: "from-emerald-200/60 to-mint-300/30",
     },
   ];
+  const activeAdminMeetingCount = adminStats?.activeMeetings ?? adminStats?.activeCallsCount ?? 0;
 
   if (user?.role === "admin") {
     return (
@@ -487,6 +488,24 @@ const Dashboard = () => {
           <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
             {adminError}
           </div>
+        )}
+
+        {activeAdminMeetingCount > 0 && (
+          <Link to="/rooms" className="group block overflow-hidden rounded-3xl border border-emerald-200 bg-emerald-50/80 p-5 shadow-soft transition hover:-translate-y-0.5 hover:shadow-lift">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <span className="rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-black text-white">LIVE</span>
+                <h2 className="mt-2 text-xl font-black text-navy-900">
+                  {activeAdminMeetingCount} live {activeAdminMeetingCount === 1 ? "meeting" : "meetings"} now
+                </h2>
+                <p className="mt-1 text-sm text-slate-600">Open Rooms to find the live room card.</p>
+              </div>
+              <span className="btn-primary w-fit bg-emerald-700 group-hover:bg-emerald-800">
+                View rooms
+                <ArrowUpRight className="h-4 w-4" />
+              </span>
+            </div>
+          </Link>
         )}
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -769,14 +788,14 @@ const Dashboard = () => {
         </div>
 
         {liveMeeting && (
-          <Link to={`/rooms/${liveMeeting.roomId}/meeting/${liveMeeting.id}`} className="block rounded-3xl border border-emerald-200 bg-emerald-50/80 p-5 shadow-soft transition hover:-translate-y-0.5 hover:shadow-lift">
+          <Link to="/rooms" className="group block rounded-3xl border border-emerald-200 bg-emerald-50/80 p-5 shadow-soft transition hover:-translate-y-0.5 hover:shadow-lift">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <span className="rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-black text-white">LIVE</span>
                 <h2 className="mt-2 text-xl font-black text-navy-900">{liveMeeting.title}</h2>
-                <p className="mt-1 text-sm text-slate-600">{liveMeeting.roomName}</p>
+                <p className="mt-1 text-sm text-slate-600">{liveMeeting.roomName} is live. Open Rooms to join from the live room card.</p>
               </div>
-              <span className="btn-primary w-fit bg-emerald-700">Join meeting</span>
+              <span className="btn-primary w-fit bg-emerald-700 group-hover:bg-emerald-800">View rooms</span>
             </div>
           </Link>
         )}
@@ -882,7 +901,7 @@ const Dashboard = () => {
 
       {liveMeeting && (
         <Link
-          to={`/rooms/${liveMeeting.roomId}/meeting/${liveMeeting.id}`}
+          to="/rooms"
           className="group block overflow-hidden rounded-3xl border border-emerald-200 bg-gradient-to-br from-emerald-50 via-white/80 to-mint-300/20 p-5 shadow-lift transition hover:-translate-y-0.5"
         >
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -899,12 +918,12 @@ const Dashboard = () => {
                 </div>
                 <h2 className="mt-2 text-xl font-black text-navy-900">{liveMeeting.title}</h2>
                 <p className="mt-1 text-sm text-slate-600">
-                  {liveMeeting.activeParticipantCount ?? liveMeeting.participantCount ?? 0} participants connected
+                  {liveMeeting.roomName} is live. Open Rooms to join from the live room card.
                 </p>
               </div>
             </div>
             <span className="btn-primary w-fit bg-emerald-700 group-hover:bg-emerald-800">
-              Join now
+              View rooms
               <ArrowUpRight className="h-4 w-4" />
             </span>
           </div>
