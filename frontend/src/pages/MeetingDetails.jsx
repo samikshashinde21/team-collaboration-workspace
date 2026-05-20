@@ -191,33 +191,26 @@ const MeetingDetails = () => {
     }
 
     const devices = await navigator.mediaDevices.enumerateDevices?.().catch(() => []) || [];
-    const hasCamera = devices.some((device) => device.kind === "videoinput");
     const hasMicrophone = devices.some((device) => device.kind === "audioinput");
 
-    if (!hasCamera && !hasMicrophone) {
+    if (!hasMicrophone) {
       return new MediaStream();
     }
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: hasCamera,
-        audio: hasMicrophone,
-      });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
       stream.getTracks().forEach((track) => {
         track.enabled = false;
       });
       return stream;
     } catch {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: hasMicrophone });
-        stream.getTracks().forEach((track) => {
-          track.enabled = false;
-        });
-        return stream;
-      } catch {
-        return new MediaStream();
-      }
+      return new MediaStream();
     }
+  };
+
+  const getCameraTrack = async () => {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    return stream.getVideoTracks()[0] || null;
   };
 
   const resetPeerConnection = useCallback(() => {
@@ -505,7 +498,16 @@ const MeetingDetails = () => {
       socket.on("meeting-force-camera-off", ({ message }) => {
         const videoTrack = localStreamRef.current?.getVideoTracks()[0];
         if (videoTrack) {
-          videoTrack.enabled = false;
+          const sender = peerConnectionRef.current
+            ?.getSenders()
+            .find((peerSender) => peerSender.track === videoTrack);
+
+          sender?.replaceTrack(null);
+          videoTrack.stop();
+          localStreamRef.current.removeTrack(videoTrack);
+          cameraTrackRef.current = null;
+          setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
+          renegotiatePeerConnection().catch(() => {});
         }
         setIsCameraOn(false);
         setSelfParticipantState({ cameraOn: false });
@@ -653,18 +655,49 @@ const MeetingDetails = () => {
     emitMediaState(nextState);
   };
 
-  const toggleCamera = () => {
+  const toggleCamera = async () => {
     const videoTrack = localStreamRef.current?.getVideoTracks()[0];
 
-    if (!videoTrack) {
-      setError("Camera is not available on this device or permission was denied.");
+    if (videoTrack) {
+      const sender = peerConnectionRef.current
+        ?.getSenders()
+        .find((peerSender) => peerSender.track === videoTrack);
+
+      if (sender) {
+        await sender.replaceTrack(null);
+      }
+
+      videoTrack.stop();
+      localStreamRef.current.removeTrack(videoTrack);
+      cameraTrackRef.current = null;
+      setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
+      setIsCameraOn(false);
       updateLocalParticipantState({ cameraOn: false });
+      renegotiatePeerConnection().catch(() => {});
       return;
     }
 
-    videoTrack.enabled = !videoTrack.enabled;
-    setIsCameraOn(videoTrack.enabled);
-    updateLocalParticipantState({ cameraOn: videoTrack.enabled });
+    try {
+      const cameraTrack = await getCameraTrack();
+
+      if (!cameraTrack) {
+        throw new Error("No camera track");
+      }
+
+      localStreamRef.current?.addTrack(cameraTrack);
+      cameraTrackRef.current = cameraTrack;
+      setLocalStream(new MediaStream(localStreamRef.current.getTracks()));
+      setIsCameraOn(true);
+      updateLocalParticipantState({ cameraOn: true });
+
+      if (peerConnectionRef.current) {
+        peerConnectionRef.current.addTrack(cameraTrack, localStreamRef.current);
+        await renegotiatePeerConnection();
+      }
+    } catch {
+      setError("Camera is not available on this device or permission was denied.");
+      updateLocalParticipantState({ cameraOn: false });
+    }
   };
 
   const toggleMicrophone = () => {

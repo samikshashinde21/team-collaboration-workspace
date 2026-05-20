@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { DoorOpen, Lock, Plus, Trash2, Users, Video } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import api from "../api/api";
+import Loader from "../components/Loader";
 import { useAuth } from "../hooks/useAuth";
 
 const roomsPerPage = 6;
@@ -289,7 +290,7 @@ const canCreateRoom = user?.role === "admin";
       )}
 
       {isLoading ? (
-        <p className="text-slate-600">Loading rooms...</p>
+        <Loader label="Loading rooms" className="py-8" />
       ) : error ? (
         <div className="soft-panel border-dashed p-8 text-center text-slate-600">
           Rooms could not be shown right now.
@@ -571,8 +572,8 @@ const canCreateRoom = user?.role === "admin";
                 disabled={isCreating}
                 className="btn-primary w-full"
               >
-                <Plus className="h-4 w-4" />
-                {isCreating ? "Creating..." : "Create room"}
+                {isCreating ? <Loader label="Creating room" size="sm" /> : <Plus className="h-4 w-4" />}
+                Create room
               </button>
             </form>
           </div>

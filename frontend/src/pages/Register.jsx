@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Mail, LockKeyhole, UserPlus, UserRound } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
+import Loader from "../components/Loader";
 import PasswordField from "../components/PasswordField";
 import { useAuth } from "../hooks/useAuth";
 import { isStrongPassword, passwordRequirementText } from "../utils/passwordValidation";
@@ -112,8 +113,8 @@ const Register = () => {
           disabled={isSubmitting}
           className="btn-primary w-full"
         >
-          <UserPlus className="h-4 w-4" />
-          {isSubmitting ? "Creating account..." : "Register"}
+          {isSubmitting ? <Loader label="Creating account" size="sm" /> : <UserPlus className="h-4 w-4" />}
+          Register
         </button>
       </form>
 

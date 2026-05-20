@@ -21,6 +21,7 @@ import {
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { io } from "socket.io-client";
 import api from "../api/api";
+import Loader from "./Loader";
 import PasswordField from "./PasswordField";
 import { useAuth } from "../hooks/useAuth";
 import { isStrongPassword, passwordRequirementText } from "../utils/passwordValidation";
@@ -942,8 +943,8 @@ const AppLayout = () => {
                     Cancel
                   </button>
                   <button type="submit" disabled={isProfileSaving} className="btn-primary">
-                    <Save className="h-4 w-4" />
-                    {isProfileSaving ? "Saving..." : "Save changes"}
+                    {isProfileSaving ? <Loader label="Saving profile" size="sm" /> : <Save className="h-4 w-4" />}
+                    Save changes
                   </button>
                 </div>
               </form>

@@ -32,6 +32,7 @@ import {
 import { io } from "socket.io-client";
 import api from "../api/api";
 import ActivityTimeline from "../components/ActivityTimeline";
+import Loader from "../components/Loader";
 import { useAuth } from "../hooks/useAuth";
 
 const chartColors = ["#8B7CFF", "#3BC98E", "#38BDF8", "#F59E0B", "#F43F5E"];
@@ -504,9 +505,9 @@ const Dashboard = () => {
                     <ArrowUpRight className="h-5 w-5 text-lavender-500 transition group-hover:translate-x-1 group-hover:-translate-y-1" />
                   </div>
                   <p className="text-sm font-bold text-slate-500">{card.label}</p>
-                  <p className="mt-3 text-4xl font-black tracking-tight text-navy-900">
-                    {isAdminStatsLoading ? "..." : card.value}
-                  </p>
+                  <div className="mt-3 min-h-12 text-4xl font-black tracking-tight text-navy-900">
+                    {isAdminStatsLoading ? <Loader label={`Loading ${card.label}`} className="justify-start py-1" /> : card.value}
+                  </div>
                   <p className="mt-auto pt-4 text-sm font-medium leading-5 text-slate-500">{card.helper}</p>
                 </div>
               </>
@@ -705,7 +706,7 @@ const Dashboard = () => {
             </div>
 
             {isAdminStatsLoading ? (
-              <p className="rounded-xl bg-white/60 px-4 py-5 text-sm text-slate-600">Loading activity...</p>
+              <Loader label="Loading activity" className="rounded-xl bg-white/60 px-4 py-5" />
             ) : (
               <ActivityTimeline activities={recentAdminActivity} emptyTitle="No recent activity" compact />
             )}
@@ -794,7 +795,7 @@ const Dashboard = () => {
             </div>
             <div className="scroll-panel max-h-[24rem] space-y-3">
               {isUserDashboardLoading ? (
-                <p className="rounded-xl bg-white/60 px-4 py-5 text-sm text-slate-600">Loading rooms...</p>
+                <Loader label="Loading rooms" className="rounded-xl bg-white/60 px-4 py-5" />
               ) : userRooms.length ? (
                 userRooms.slice(0, 8).map((room) => (
                   <Link key={room._id} to={`/rooms/${room._id}`} className="block rounded-2xl border border-white/70 bg-white/65 px-4 py-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-soft">
@@ -959,7 +960,7 @@ const Dashboard = () => {
           </div>
           <div className="scroll-panel max-h-[24rem] space-y-3">
             {isUserDashboardLoading ? (
-              <p className="rounded-xl bg-white/60 px-4 py-5 text-sm text-slate-600">Loading meetings...</p>
+              <Loader label="Loading meetings" className="rounded-xl bg-white/60 px-4 py-5" />
             ) : upcomingMeetings.length ? (
               upcomingMeetings.map((meeting) => (
                 <div key={meeting.id} className="rounded-2xl border border-white/70 bg-white/65 px-4 py-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow-soft">
@@ -1008,7 +1009,7 @@ const Dashboard = () => {
           </div>
           <div className="scroll-panel max-h-[24rem] space-y-3">
             {isUserDashboardLoading ? (
-              <p className="rounded-xl bg-white/60 px-4 py-5 text-sm text-slate-600">Loading rooms...</p>
+              <Loader label="Loading rooms" className="rounded-xl bg-white/60 px-4 py-5" />
             ) : userRooms.length ? (
               userRooms.slice(0, 8).map((room) => {
                 const latestMeeting = latestMeetingByRoomId.get(room._id);

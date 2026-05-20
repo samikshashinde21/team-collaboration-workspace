@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { LogIn, Mail, LockKeyhole } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import Loader from "../components/Loader";
 import PasswordField from "../components/PasswordField";
 import { useAuth } from "../hooks/useAuth";
 
@@ -88,8 +89,8 @@ const Login = () => {
           disabled={isSubmitting}
           className="btn-primary w-full"
         >
-          <LogIn className="h-4 w-4" />
-          {isSubmitting ? "Logging in..." : "Login"}
+          {isSubmitting ? <Loader label="Logging in" size="sm" /> : <LogIn className="h-4 w-4" />}
+          Login
         </button>
       </form>
 

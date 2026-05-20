@@ -21,6 +21,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import api from "../api/api";
 import ActivityTimeline from "../components/ActivityTimeline";
 import ChatBox from "../components/ChatBox";
+import Loader from "../components/Loader";
 import { useAuth } from "../hooks/useAuth";
 import { io } from "socket.io-client";
 
@@ -240,7 +241,8 @@ const ParticipantModerationMenu = ({ roomId, member, onRemoved }) => {
                 disabled={isRemoving}
                 className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-soft transition hover:-translate-y-0.5 hover:bg-red-500 disabled:cursor-not-allowed disabled:bg-red-900"
               >
-                {isRemoving ? "Removing..." : "Yes, remove"}
+                {isRemoving && <Loader label="Removing participant" size="sm" />}
+                Yes, remove
               </button>
             </div>
           </div>
@@ -566,7 +568,7 @@ const RoomDetails = () => {
   };
 
   if (isLoading) {
-    return <p className="text-slate-600">Loading room...</p>;
+    return <Loader label="Loading room" className="py-12" />;
   }
 
   if (error) {
@@ -779,8 +781,8 @@ const RoomDetails = () => {
               disabled={isStartingMeeting}
               className={`${activeMeeting || canManageMeetings ? "btn-primary" : "hidden"} mt-4 w-full`}
             >
-              <Video className="h-4 w-4" />
-              {isStartingMeeting ? "Starting..." : activeMeeting ? "Join Meeting" : "Start Meeting"}
+              {isStartingMeeting ? <Loader label="Starting meeting" size="sm" /> : <Video className="h-4 w-4" />}
+              {activeMeeting ? "Join Meeting" : "Start Meeting"}
             </button>
           </div>
         </div>
@@ -914,7 +916,7 @@ const RoomDetails = () => {
                             : isAcceptedInRoom
                               ? "Accepted"
                               : invitingUserId === member._id
-                                ? "Sending..."
+                                ? <Loader label="Sending invitation" size="sm" />
                                 : "Invite"}
                       </button>
                     </div>
@@ -1012,8 +1014,8 @@ const RoomDetails = () => {
                 />
               </div>
               <button type="submit" disabled={isSchedulingMeeting} className="btn-primary w-full">
-                <CalendarClock className="h-4 w-4" />
-                {isSchedulingMeeting ? "Scheduling..." : "Schedule Meeting"}
+                {isSchedulingMeeting ? <Loader label="Scheduling meeting" size="sm" /> : <CalendarClock className="h-4 w-4" />}
+                Schedule Meeting
               </button>
             </form>
           </div>
@@ -1216,8 +1218,8 @@ const RoomDetails = () => {
                       disabled={isStartingMeeting}
                       className={activeMeeting || canManageMeetings ? "btn-primary" : "hidden"}
                     >
-                      <Video className="h-4 w-4" />
-                      {isStartingMeeting ? "Starting..." : activeMeeting ? "Join Meeting" : "Start Meeting"}
+                      {isStartingMeeting ? <Loader label="Starting meeting" size="sm" /> : <Video className="h-4 w-4" />}
+                      {activeMeeting ? "Join Meeting" : "Start Meeting"}
                     </button>
                   </div>
                 </div>

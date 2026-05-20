@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Activity, PhoneCall, Shield, Users, Video } from "lucide-react";
 import { Link } from "react-router-dom";
 import api from "../api/api";
+import Loader from "../components/Loader";
 
 const formatActivityTime = (value) => {
   return new Intl.DateTimeFormat("en", {
@@ -74,9 +75,9 @@ const AdminDashboard = () => {
                 <Icon className="h-5 w-5" />
               </span>
               <p className="text-sm font-semibold text-slate-500">{card.label}</p>
-              <p className="mt-3 text-3xl font-black text-navy-900">
-                {isLoading ? "..." : card.value}
-              </p>
+              <div className="mt-3 min-h-9 text-3xl font-black text-navy-900">
+                {isLoading ? <Loader label={`Loading ${card.label}`} className="justify-start py-1" /> : card.value}
+              </div>
             </div>
           );
         })}
@@ -96,7 +97,7 @@ const AdminDashboard = () => {
 
         <div className="mt-4 divide-y divide-slate-100">
           {isLoading ? (
-            <p className="py-4 text-sm text-slate-600">Loading activity...</p>
+            <Loader label="Loading activity" className="py-4" />
           ) : stats?.recentActivity?.length ? (
             stats.recentActivity.map((activity) => (
               <div key={activity.id} className="py-3">

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Shield, UsersRound } from "lucide-react";
 import api from "../api/api";
+import Loader from "../components/Loader";
 
 const roles = ["admin", "moderator", "user"];
 
@@ -65,7 +66,7 @@ const Users = () => {
 
       <div className="premium-card overflow-hidden">
         {isLoading ? (
-          <p className="p-5 text-slate-600">Loading users...</p>
+          <Loader label="Loading users" className="p-5" />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-left text-sm">

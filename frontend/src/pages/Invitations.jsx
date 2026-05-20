@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Check, Clock3, ClipboardList, X } from "lucide-react";
 import api from "../api/api";
+import Loader from "../components/Loader";
 import { useAuth } from "../hooks/useAuth";
 
 const formatTime = (value) =>
@@ -91,7 +92,7 @@ const Invitations = () => {
       <section className="soft-panel p-5">
         <div className="scroll-panel max-h-[34rem] space-y-3">
           {isLoading ? (
-            <p className="rounded-xl bg-white/60 px-4 py-5 text-sm text-slate-600">Loading invitations...</p>
+            <Loader label="Loading invitations" className="rounded-xl bg-white/60 px-4 py-5" />
           ) : invitations.length ? (
             invitations.map((invitation) => {
               const isIncoming = invitation.invitedUser?.id === user?.id;

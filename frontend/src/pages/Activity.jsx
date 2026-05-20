@@ -3,6 +3,7 @@ import { Activity as ActivityIcon, ArrowLeft, Clock3, Filter } from "lucide-reac
 import { Link } from "react-router-dom";
 import api from "../api/api";
 import ActivityTimeline from "../components/ActivityTimeline";
+import Loader from "../components/Loader";
 
 const Activity = () => {
   const [activities, setActivities] = useState([]);
@@ -111,7 +112,7 @@ const Activity = () => {
           <span className="status-pill">{meta.total} total</span>
         </div>
         {isLoading ? (
-          <p className="rounded-xl bg-white/60 px-4 py-5 text-sm text-slate-600">Loading activity...</p>
+          <Loader label="Loading activity" className="rounded-xl bg-white/60 px-4 py-5" />
         ) : (
           <>
             <div className="scroll-panel max-h-[34rem]">
