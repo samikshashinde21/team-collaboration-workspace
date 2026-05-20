@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Activity, BarChart3, PhoneCall, Shield, Users, Video } from "lucide-react";
+import { Activity, PhoneCall, Shield, Users, Video } from "lucide-react";
 import { Link } from "react-router-dom";
 import api from "../api/api";
 
@@ -64,20 +64,22 @@ const AdminDashboard = () => {
         </div>
       )}
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {statCards.map((card) => {
           const Icon = card.icon;
+
           return (
-          <div key={card.label} className="premium-card p-5">
-            <span className="icon-chip mb-4">
-              <Icon className="h-5 w-5" />
-            </span>
-            <p className="text-sm font-semibold text-slate-500">{card.label}</p>
-            <p className="mt-3 text-3xl font-black text-navy-900">
-              {isLoading ? "..." : card.value}
-            </p>
-          </div>
-        )})}
+            <div key={card.label} className="premium-card p-5">
+              <span className="icon-chip mb-4">
+                <Icon className="h-5 w-5" />
+              </span>
+              <p className="text-sm font-semibold text-slate-500">{card.label}</p>
+              <p className="mt-3 text-3xl font-black text-navy-900">
+                {isLoading ? "..." : card.value}
+              </p>
+            </div>
+          );
+        })}
       </div>
 
       <div className="soft-panel p-5">
@@ -89,9 +91,7 @@ const AdminDashboard = () => {
             </h2>
             <p className="mt-1 text-sm text-slate-500">Latest platform changes</p>
           </div>
-          <span className="status-pill">
-            Latest 5
-          </span>
+          <span className="status-pill">Latest 5</span>
         </div>
 
         <div className="mt-4 divide-y divide-slate-100">
@@ -107,7 +107,7 @@ const AdminDashboard = () => {
                   </time>
                 </div>
                 <p className="mt-1 text-sm text-slate-500">
-                  {activity.user?.name || "System"} · {activity.action.replaceAll("_", " ")}
+                  {activity.actor?.name || "System"} - {activity.action.replaceAll("_", " ")}
                 </p>
               </div>
             ))
@@ -117,10 +117,7 @@ const AdminDashboard = () => {
         </div>
       </div>
 
-      <Link
-        to="/admin/users"
-        className="premium-card block p-5"
-      >
+      <Link to="/admin/users" className="premium-card block p-5">
         <h2 className="inline-flex items-center gap-2 font-black text-navy-900">
           <Shield className="h-4 w-4" />
           Manage users

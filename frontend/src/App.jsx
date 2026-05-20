@@ -3,6 +3,7 @@ import AppLayout from "./components/AppLayout";
 import AuthLayout from "./components/AuthLayout";
 import ProtectedRoute from "./components/ProtectedRoute";
 import RoleRoute from "./components/RoleRoute";
+import Activity from "./pages/Activity";
 import AdminDashboard from "./pages/AdminDashboard";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
@@ -24,6 +25,7 @@ const App = () => {
         <Route path="/rooms/:roomId/meeting/:meetingId" element={<MeetingDetails />} />
         <Route element={<AppLayout />}>
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/activity" element={<Activity />} />
           <Route path="/rooms" element={<Rooms />} />
           <Route path="/rooms/:id" element={<RoomDetails />} />
 

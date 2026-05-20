@@ -50,23 +50,34 @@ const Rooms = () => {
     let isMounted = true;
 
     const fetchRooms = async () => {
+      setError("");
+
       try {
-        const [{ data: roomsData }, { data: unreadData }] = await Promise.all([
-          api.get("/rooms"),
-          api.get("/unread-counts"),
-        ]);
+        const { data: roomsData } = await api.get("/rooms");
 
         if (isMounted) {
           setRooms(roomsData);
-          setUnreadCounts(unreadData);
         }
       } catch (err) {
         if (isMounted) {
           setError(err.response?.data?.message || "Could not load rooms.");
+          setRooms([]);
         }
       } finally {
         if (isMounted) {
           setIsLoading(false);
+        }
+      }
+
+      try {
+        const { data: unreadData } = await api.get("/unread-counts");
+
+        if (isMounted) {
+          setUnreadCounts(unreadData);
+        }
+      } catch {
+        if (isMounted) {
+          setUnreadCounts({ rooms: {}, meetings: {}, total: 0 });
         }
       }
     };
@@ -95,6 +106,7 @@ const Rooms = () => {
       try {
         const { data } = await api.get("/rooms");
         setRooms(data);
+        setError("");
       } catch (err) {
         setError(err.response?.data?.message || "Could not load rooms.");
       }
@@ -226,6 +238,10 @@ const Rooms = () => {
 
       {isLoading ? (
         <p className="text-slate-600">Loading rooms...</p>
+      ) : error ? (
+        <div className="soft-panel border-dashed p-8 text-center text-slate-600">
+          Rooms could not be shown right now.
+        </div>
       ) : rooms.length === 0 ? (
         <div className="soft-panel border-dashed p-8 text-center text-slate-600">
           No rooms yet.

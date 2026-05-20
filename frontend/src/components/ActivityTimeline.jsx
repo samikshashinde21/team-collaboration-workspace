@@ -1,3 +1,5 @@
+import { Activity, Clock3 } from "lucide-react";
+
 const actionLabels = {
   USER_LOGIN: "logged in",
   ROOM_CREATED: "created a room",
@@ -88,4 +90,3 @@ const ActivityTimeline = ({ activities, emptyTitle = "No activity yet", compact 
 };
 
 export default ActivityTimeline;
-import { Activity, Clock3 } from "lucide-react";
