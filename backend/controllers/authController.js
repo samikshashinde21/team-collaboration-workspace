@@ -15,7 +15,7 @@ const isStrongPassword = (password = "") =>
 const sendAuthResponse = (res, statusCode, user) => {
   const token = createToken(user._id);
 
-  res.status(statusCode).json({
+  return res.status(statusCode).json({
     token,
     user: {
       id: user._id,
@@ -30,6 +30,8 @@ const sendAuthResponse = (res, statusCode, user) => {
 
 const register = async (req, res) => {
   try {
+    console.log("Register request body:", req.body);
+
     const { name, email, password } = req.body;
 
     if (!name || !email || !password) {
@@ -59,9 +61,9 @@ const register = async (req, res) => {
       role: userCount === 0 ? "admin" : "user",
     });
 
-    sendAuthResponse(res, 201, user);
+    return sendAuthResponse(res, 201, user);
   } catch (error) {
-    res.status(500).json({ message: "Registration failed", error: error.message });
+    return res.status(500).json({ message: "Registration failed", error: error.message });
   }
 };
 
@@ -92,9 +94,9 @@ const login = async (req, res) => {
       description: `${user.name} logged in`,
     });
 
-    sendAuthResponse(res, 200, user);
+    return sendAuthResponse(res, 200, user);
   } catch (error) {
-    res.status(500).json({ message: "Login failed", error: error.message });
+    return res.status(500).json({ message: "Login failed", error: error.message });
   }
 };
 
