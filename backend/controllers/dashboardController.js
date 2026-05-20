@@ -1,16 +1,128 @@
 const ActivityLog = require("../models/ActivityLog");
 const Meeting = require("../models/Meeting");
 const Room = require("../models/Room");
+const RoomInvitation = require("../models/RoomInvitation");
 const User = require("../models/User");
 const { formatActivity, populateActivity } = require("../services/activityLogger");
 const { getPresenceStats } = require("../services/presenceStore");
 
 const roomActivityLabels = {
-  ROOM_CREATED: "Created",
-  ROOM_JOINED: "Joined",
-  ROOM_LEFT: "Left",
+  CURRENT_ROOMS: "Current rooms",
   MEETING_STARTED: "Meetings started",
-  MEETING_ENDED: "Meetings ended",
+  INVITATION_ACCEPTED: "Invitations accepted",
+  USER_MUTED: "Users muted",
+  USER_KICKED: "Users removed",
+  USER_ROLE_UPDATED: "Role changes",
+  SCREEN_SHARE_BLOCKED: "Access revoked",
+};
+
+const roomModerationActions = [
+  "USER_MUTED",
+  "USER_KICKED",
+  "SCREEN_SHARE_BLOCKED",
+  "USER_ROLE_UPDATED",
+];
+
+const recentOperationalActions = [
+  "ROOM_CREATED",
+  "ROOM_DELETED",
+  "INVITATION_ACCEPTED",
+  "INVITATION_REJECTED",
+  "MEETING_STARTED",
+  "MEETING_ENDED",
+  ...roomModerationActions,
+];
+
+const activityTrendActions = [
+  "MEETING_STARTED",
+];
+
+const countMeetingsForExistingRooms = async (match = {}) => {
+  const rows = await Meeting.aggregate([
+    { $match: match },
+    {
+      $lookup: {
+        from: "rooms",
+        localField: "room",
+        foreignField: "_id",
+        as: "roomDoc",
+      },
+    },
+    { $match: { roomDoc: { $ne: [] } } },
+    { $count: "count" },
+  ]);
+
+  return rows[0]?.count || 0;
+};
+
+const countInvitationsForExistingRooms = async (match = {}) => {
+  const rows = await RoomInvitation.aggregate([
+    { $match: match },
+    {
+      $lookup: {
+        from: "rooms",
+        localField: "room",
+        foreignField: "_id",
+        as: "roomDoc",
+      },
+    },
+    { $match: { roomDoc: { $ne: [] } } },
+    { $count: "count" },
+  ]);
+
+  return rows[0]?.count || 0;
+};
+
+const countActivityForExistingRooms = async (actions) => {
+  const rows = await ActivityLog.aggregate([
+    { $match: { action: { $in: actions }, room: { $ne: null } } },
+    {
+      $lookup: {
+        from: "rooms",
+        localField: "room",
+        foreignField: "_id",
+        as: "roomDoc",
+      },
+    },
+    { $match: { roomDoc: { $ne: [] } } },
+    {
+      $group: {
+        _id: "$action",
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+
+  return rows.reduce((map, row) => {
+    map[row._id] = row.count;
+    return map;
+  }, {});
+};
+
+const buildCurrentRoomActivityDistribution = async (currentRooms) => {
+  const [meetingsStarted, invitationsAccepted, moderationCounts] =
+    await Promise.all([
+      countMeetingsForExistingRooms(),
+      countInvitationsForExistingRooms({ status: "accepted" }),
+      countActivityForExistingRooms(roomModerationActions),
+    ]);
+  const moderationDetails = [
+    { name: roomActivityLabels.USER_MUTED, value: moderationCounts.USER_MUTED || 0 },
+    { name: roomActivityLabels.USER_KICKED, value: moderationCounts.USER_KICKED || 0 },
+    { name: roomActivityLabels.USER_ROLE_UPDATED, value: moderationCounts.USER_ROLE_UPDATED || 0 },
+    { name: roomActivityLabels.SCREEN_SHARE_BLOCKED, value: moderationCounts.SCREEN_SHARE_BLOCKED || 0 },
+  ];
+
+  return [
+    { name: roomActivityLabels.CURRENT_ROOMS, value: currentRooms },
+    { name: roomActivityLabels.MEETING_STARTED, value: meetingsStarted },
+    { name: roomActivityLabels.INVITATION_ACCEPTED, value: invitationsAccepted },
+    {
+      name: "Moderator actions",
+      value: moderationDetails.reduce((sum, item) => sum + item.value, 0),
+      details: moderationDetails,
+    },
+  ];
 };
 
 const roleLabels = {
@@ -22,46 +134,43 @@ const roleLabels = {
 const emptyAnalytics = {
   roomActivityDistribution: [],
   userRoleDistribution: [],
-  weeklyWorkspaceActivity: [],
+  activityTrend: [],
 };
 
-const buildWeeklyActivity = (activityCounts) => {
+const getTrendWindowDays = (value) => {
+  const days = Number(value);
+
+  return [7, 30, 90].includes(days) ? days : 7;
+};
+
+const buildActivityTrend = (activityCounts, days) => {
   const countMap = activityCounts.reduce((map, item) => {
     map[item._id] = item.count;
     return map;
   }, {});
 
-  return Array.from({ length: 7 }, (_, index) => {
+  return Array.from({ length: days }, (_, index) => {
     const date = new Date();
     date.setUTCHours(0, 0, 0, 0);
-    date.setUTCDate(date.getUTCDate() - (6 - index));
+    date.setUTCDate(date.getUTCDate() - (days - 1 - index));
 
     const key = date.toISOString().slice(0, 10);
 
     return {
-      day: date.toLocaleDateString("en", { timeZone: "UTC", weekday: "short" }),
+      day:
+        days === 7
+          ? date.toLocaleDateString("en", { timeZone: "UTC", weekday: "short" })
+          : date.toLocaleDateString("en", { timeZone: "UTC", month: "short", day: "numeric" }),
+      date: key,
       count: countMap[key] || 0,
     };
   });
 };
 
-const getDashboardAnalytics = async (lastSevenDays) => {
+const getDashboardAnalytics = async ({ trendStartDate, trendDays, currentRooms }) => {
   try {
-    const [roomActivityCounts, roleCounts, weeklyActivityCounts] = await Promise.all([
-      ActivityLog.aggregate([
-        {
-          $match: {
-            action: { $in: Object.keys(roomActivityLabels) },
-          },
-        },
-        {
-          $group: {
-            _id: "$action",
-            count: { $sum: 1 },
-          },
-        },
-        { $sort: { count: -1 } },
-      ]),
+    const [roomActivityDistribution, roleCounts, activityTrendCounts] = await Promise.all([
+      buildCurrentRoomActivityDistribution(currentRooms),
       User.aggregate([
         {
           $group: {
@@ -74,9 +183,20 @@ const getDashboardAnalytics = async (lastSevenDays) => {
       ActivityLog.aggregate([
         {
           $match: {
-            timestamp: { $gte: lastSevenDays },
+            action: { $in: activityTrendActions },
+            timestamp: { $gte: trendStartDate },
+            room: { $ne: null },
           },
         },
+        {
+          $lookup: {
+            from: "rooms",
+            localField: "room",
+            foreignField: "_id",
+            as: "roomDoc",
+          },
+        },
+        { $match: { roomDoc: { $ne: [] } } },
         {
           $group: {
             _id: { $dateToString: { format: "%Y-%m-%d", date: "$timestamp" } },
@@ -87,37 +207,51 @@ const getDashboardAnalytics = async (lastSevenDays) => {
     ]);
 
     return {
-      roomActivityDistribution: roomActivityCounts.map((item) => ({
-        name: roomActivityLabels[item._id] || String(item._id || "Other").replaceAll("_", " ").toLowerCase(),
-        value: item.count,
-      })),
+      roomActivityDistribution,
       userRoleDistribution: roleCounts.map((item) => ({
         name: roleLabels[item._id] || item._id || "Unknown",
         value: item.count,
       })),
-      weeklyWorkspaceActivity: buildWeeklyActivity(weeklyActivityCounts),
+      activityTrend: buildActivityTrend(activityTrendCounts, trendDays),
     };
   } catch {
     return {
       ...emptyAnalytics,
-      weeklyWorkspaceActivity: buildWeeklyActivity([]),
+      activityTrend: buildActivityTrend([], trendDays),
     };
   }
 };
 
 const getDashboardStats = async (req, res) => {
   try {
-    const lastSevenDays = new Date();
-    lastSevenDays.setUTCHours(0, 0, 0, 0);
-    lastSevenDays.setUTCDate(lastSevenDays.getUTCDate() - 6);
+    const trendDays = getTrendWindowDays(req.query.timeframe);
+    const trendStartDate = new Date();
+    trendStartDate.setUTCHours(0, 0, 0, 0);
+    trendStartDate.setUTCDate(trendStartDate.getUTCDate() - (trendDays - 1));
 
-    const [totalUsers, totalRooms, activeMeetings, recentActivity, analytics] = await Promise.all([
+    const [
+      totalUsers,
+      totalRooms,
+      activeMeetings,
+      pendingInvitations,
+      recentActivity,
+    ] = await Promise.all([
       User.countDocuments(),
       Room.countDocuments(),
-      Meeting.countDocuments({ status: "active" }),
-      populateActivity(ActivityLog.find().sort({ timestamp: -1, createdAt: -1 }).limit(5)),
-      getDashboardAnalytics(lastSevenDays),
+      countMeetingsForExistingRooms({ status: "active" }),
+      countInvitationsForExistingRooms({ status: "pending" }),
+      populateActivity(
+        ActivityLog.find({ action: { $in: recentOperationalActions } })
+          .sort({ timestamp: -1, createdAt: -1 })
+          .limit(5)
+      ),
     ]);
+
+    const analytics = await getDashboardAnalytics({
+      trendStartDate,
+      trendDays,
+      currentRooms: totalRooms,
+    });
 
     const { onlineUsersCount, activeCallsCount } = getPresenceStats();
 
@@ -126,6 +260,7 @@ const getDashboardStats = async (req, res) => {
       totalRooms,
       activeRooms: totalRooms,
       activeMeetings,
+      pendingInvitations,
       onlineUsersCount,
       activeCallsCount,
       recentActivity: recentActivity.map(formatActivity),

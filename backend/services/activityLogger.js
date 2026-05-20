@@ -37,20 +37,31 @@ const formatRoom = (room) =>
       }
     : null;
 
-const formatMeeting = (meeting) =>
-  meeting
-    ? {
-        id: meeting._id.toString(),
-        status: meeting.status,
-      }
-    : null;
+const formatMeeting = (meeting) => {
+  if (!meeting) {
+    return null;
+  }
+
+  const durationEnd = meeting.endedAt || new Date();
+  const durationMs = meeting.startedAt ? durationEnd.getTime() - meeting.startedAt.getTime() : 0;
+
+  return {
+    id: meeting._id.toString(),
+    status: meeting.status,
+    startedAt: meeting.startedAt,
+    endedAt: meeting.endedAt,
+    durationMs: Math.max(durationMs, 0),
+    durationSeconds: Math.max(Math.floor(durationMs / 1000), 0),
+    participantCount: meeting.participants?.length || 0,
+  };
+};
 
 const populateActivity = (query) =>
   query
     .populate("actor", "name email role")
     .populate("targetUser", "name email role")
     .populate("room", "name")
-    .populate("meeting", "status startedAt endedAt");
+    .populate("meeting", "status startedAt endedAt participants");
 
 const formatActivity = (activity) => ({
   id: activity._id.toString(),

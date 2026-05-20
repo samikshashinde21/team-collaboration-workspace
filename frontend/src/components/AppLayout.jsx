@@ -123,6 +123,18 @@ const AppLayout = () => {
     };
   }, [isNotificationsOpen]);
 
+  useEffect(() => {
+    const openNotifications = () => {
+      setIsNotificationsOpen(true);
+    };
+
+    window.addEventListener("open-notifications", openNotifications);
+
+    return () => {
+      window.removeEventListener("open-notifications", openNotifications);
+    };
+  }, []);
+
   const updateInvitationStatus = async (invitationId, status) => {
     setNotificationError("");
 

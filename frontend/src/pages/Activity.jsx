@@ -42,9 +42,9 @@ const Activity = () => {
   return (
     <section className="space-y-6">
       <div className="page-hero">
-        <Link to="/admin/dashboard" className="btn-secondary mb-6 w-fit">
+        <Link to="/dashboard" className="btn-secondary mb-6 w-fit">
           <ArrowLeft className="h-4 w-4" />
-          Admin dashboard
+          Dashboard
         </Link>
         <p className="section-kicker">Activity</p>
         <h1 className="mt-3 text-4xl font-black tracking-tight text-navy-900 md:text-5xl">

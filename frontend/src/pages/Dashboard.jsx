@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity,
   ArrowUpRight,
   BarChart3,
+  MailQuestion,
   PieChart as PieChartIcon,
   Radio,
   Shield,
   Sparkles,
-  Users,
   Video,
 } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -32,6 +32,47 @@ import { useAuth } from "../hooks/useAuth";
 
 const chartColors = ["#8B7CFF", "#3BC98E", "#38BDF8", "#F59E0B", "#F43F5E"];
 const emptyDistribution = [{ name: "No activity", value: 1 }];
+const timeframeOptions = ["7D", "30D", "90D"];
+const statRefreshActions = new Set([
+  "ROOM_CREATED",
+  "ROOM_DELETED",
+  "MEETING_STARTED",
+  "MEETING_ENDED",
+  "INVITATION_SENT",
+  "INVITATION_ACCEPTED",
+  "INVITATION_REJECTED",
+  "ROOM_JOINED",
+  "ROOM_LEFT",
+  "USER_KICKED",
+  "SCREEN_SHARE_BLOCKED",
+  "SCREEN_SHARE_ALLOWED",
+  "USER_ROLE_UPDATED",
+]);
+
+const RoomActivityTooltip = ({ active, payload }) => {
+  if (!active || !payload?.length) {
+    return null;
+  }
+
+  const item = payload[0]?.payload;
+
+  return (
+    <div className="rounded-2xl border border-white/70 bg-white/95 px-4 py-3 text-sm shadow-lift backdrop-blur-xl">
+      <p className="font-black text-navy-900">{item.name}</p>
+      <p className="mt-1 text-slate-600">{item.value}</p>
+      {item.details?.length > 0 && (
+        <div className="mt-3 space-y-1 border-t border-slate-100 pt-2">
+          {item.details.map((detail) => (
+            <div key={detail.name} className="flex items-center justify-between gap-6 text-xs text-slate-500">
+              <span>{detail.name}</span>
+              <span className="font-bold text-navy-900">{detail.value}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const Dashboard = () => {
   const { user, token } = useAuth();
@@ -39,6 +80,32 @@ const Dashboard = () => {
   const [adminStats, setAdminStats] = useState(null);
   const [adminError, setAdminError] = useState("");
   const [isAdminStatsLoading, setIsAdminStatsLoading] = useState(user?.role === "admin");
+  const [activityTimeframe, setActivityTimeframe] = useState("7D");
+
+  const fetchAdminStats = useCallback(async ({ showLoading = false } = {}) => {
+    if (user?.role !== "admin") {
+      return;
+    }
+
+    if (showLoading) {
+      setIsAdminStatsLoading(true);
+    }
+
+    try {
+      const { data } = await api.get("/dashboard/stats", {
+        params: { timeframe: activityTimeframe.replace("D", "") },
+      });
+
+      setAdminStats(data);
+      setAdminError("");
+    } catch (err) {
+      setAdminError(err.response?.data?.message || "Could not load dashboard stats.");
+    } finally {
+      if (showLoading) {
+        setIsAdminStatsLoading(false);
+      }
+    }
+  }, [activityTimeframe, user?.role]);
 
   useEffect(() => {
     let isMounted = true;
@@ -71,34 +138,22 @@ const Dashboard = () => {
       return undefined;
     }
 
-    let isMounted = true;
+    fetchAdminStats({ showLoading: true });
+  }, [fetchAdminStats, user?.role]);
 
-    const fetchAdminStats = async () => {
-      setIsAdminStatsLoading(true);
+  useEffect(() => {
+    if (user?.role !== "admin") {
+      return undefined;
+    }
 
-      try {
-        const { data } = await api.get("/dashboard/stats");
-
-        if (isMounted) {
-          setAdminStats(data);
-        }
-      } catch (err) {
-        if (isMounted) {
-          setAdminError(err.response?.data?.message || "Could not load dashboard stats.");
-        }
-      } finally {
-        if (isMounted) {
-          setIsAdminStatsLoading(false);
-        }
-      }
-    };
-
-    fetchAdminStats();
+    const intervalId = window.setInterval(() => {
+      fetchAdminStats();
+    }, 10000);
 
     return () => {
-      isMounted = false;
+      window.clearInterval(intervalId);
     };
-  }, [user?.role]);
+  }, [fetchAdminStats, user?.role]);
 
   useEffect(() => {
     if (!token) return undefined;
@@ -114,59 +169,80 @@ const Dashboard = () => {
         activity,
         ...currentActivities.filter((item) => item.id !== activity.id),
       ].slice(0, user?.role === "admin" ? 5 : 8));
+
+      if (user?.role === "admin" && statRefreshActions.has(activity.action)) {
+        fetchAdminStats();
+      }
     });
 
     return () => {
       socket.disconnect();
     };
-  }, [token, user?.role]);
+  }, [fetchAdminStats, token, user?.role]);
 
   const analytics = adminStats?.analytics || {};
   const recentAdminActivity = useMemo(
-    () => (activities.length ? activities : adminStats?.recentActivity || []).slice(0, 5),
-    [activities, adminStats]
+    () => (adminStats?.recentActivity || []).slice(0, 5),
+    [adminStats]
   );
 
   const adminStatCards = [
     {
-      label: "Total users",
-      value: adminStats?.totalUsers ?? 0,
-      icon: Users,
-      accent: "from-lavender-500/20 to-mint-300/30",
-      helper: "Registered workspace accounts",
-    },
-    {
       label: "Active rooms",
       value: adminStats?.activeRooms ?? adminStats?.totalRooms ?? 0,
       icon: Video,
-      accent: "from-sky-300/25 to-lavender-200/40",
-      helper: "Rooms available to teams",
+      to: "/rooms",
+      accent: "from-sky-300/30 via-lavender-200/35 to-white/20",
+      iconAccent: "from-sky-200 to-lavender-200",
+      glow: "bg-sky-300/30",
+      helper: "Rooms currently available",
     },
     {
       label: "Active meetings",
       value: adminStats?.activeMeetings ?? adminStats?.activeCallsCount ?? 0,
       icon: Radio,
-      accent: "from-mint-300/35 to-emerald-200/35",
-      helper: "Live sessions right now",
+      to: "/rooms",
+      accent: "from-mint-300/35 via-emerald-200/35 to-white/20",
+      iconAccent: "from-mint-300 to-emerald-200",
+      glow: "bg-mint-300/35",
+      helper: "Live meetings happening now",
     },
     {
       label: "Online users",
       value: adminStats?.onlineUsersCount ?? 0,
       icon: Activity,
-      accent: "from-rose-200/35 to-amber-200/35",
-      helper: "Connected via realtime presence",
+      to: "/admin/users",
+      accent: "from-lavender-500/20 via-violet-200/35 to-white/20",
+      iconAccent: "from-lavender-200 to-violet-200",
+      glow: "bg-lavender-500/25",
+      helper: "Users connected in realtime",
+    },
+    {
+      label: "Pending invitations",
+      value: adminStats?.pendingInvitations ?? 0,
+      icon: MailQuestion,
+      action: () => window.dispatchEvent(new Event("open-notifications")),
+      accent: "from-amber-200/40 via-rose-200/30 to-white/20",
+      iconAccent: "from-amber-200 to-rose-200",
+      glow: "bg-amber-200/40",
+      helper: "Invitations awaiting response",
     },
   ];
 
   const roomActivityData = analytics.roomActivityDistribution?.length
     ? analytics.roomActivityDistribution
     : emptyDistribution;
+  const hasRoomActivity = roomActivityData.some((item) => item.value > 0);
   const roleDistributionData = analytics.userRoleDistribution?.length
     ? analytics.userRoleDistribution
     : emptyDistribution;
-  const weeklyActivityData = analytics.weeklyWorkspaceActivity?.length
-    ? analytics.weeklyWorkspaceActivity
-    : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => ({ day, count: 0 }));
+  const activityTrendData = analytics.activityTrend?.length
+    ? analytics.activityTrend
+    : Array.from({ length: Number(activityTimeframe.replace("D", "")) }, (_, index) => ({
+        day: index === 0 ? "Start" : index === Number(activityTimeframe.replace("D", "")) - 1 ? "Today" : "",
+        count: 0,
+      }));
+  const hasActivityTrend = activityTrendData.some((item) => item.count > 0);
 
   if (user?.role === "admin") {
     return (
@@ -206,40 +282,80 @@ const Dashboard = () => {
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {adminStatCards.map((card) => {
             const Icon = card.icon;
-
-            return (
-              <article key={card.label} className="premium-card group relative overflow-hidden p-5">
-                <div className={`absolute inset-x-0 top-0 h-24 bg-gradient-to-br ${card.accent}`} />
-                <div className="relative">
-                  <div className="mb-5 flex items-center justify-between">
-                    <span className="icon-chip">
+            const cardContent = (
+              <>
+                <div className={`absolute inset-x-0 top-0 h-28 bg-gradient-to-br ${card.accent}`} />
+                <div className={`absolute right-4 top-4 h-20 w-20 rounded-full ${card.glow} blur-2xl transition duration-300 group-hover:scale-125 group-hover:opacity-90`} />
+                <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full border border-white/60 bg-white/25 opacity-70 transition duration-300 group-hover:rotate-12" />
+                <div className="relative flex h-full flex-col">
+                  <div className="mb-7 flex items-start justify-between gap-4">
+                    <span className={`inline-flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br ${card.iconAccent} text-navy-900 shadow-soft transition duration-300 group-hover:-translate-y-1 group-hover:shadow-lift`}>
                       <Icon className="h-5 w-5" />
                     </span>
                     <ArrowUpRight className="h-5 w-5 text-lavender-500 transition group-hover:translate-x-1 group-hover:-translate-y-1" />
                   </div>
-                  <p className="text-sm font-semibold text-slate-500">{card.label}</p>
-                  <p className="mt-2 text-4xl font-black text-navy-900">
+                  <p className="text-sm font-bold text-slate-500">{card.label}</p>
+                  <p className="mt-3 text-4xl font-black tracking-tight text-navy-900">
                     {isAdminStatsLoading ? "..." : card.value}
                   </p>
-                  <p className="mt-3 text-xs font-medium text-slate-500">{card.helper}</p>
+                  <p className="mt-auto pt-4 text-sm font-medium leading-5 text-slate-500">{card.helper}</p>
                 </div>
-              </article>
+              </>
+            );
+
+            if (card.to) {
+              return (
+                <Link key={card.label} to={card.to} className="premium-card group relative min-h-48 overflow-hidden p-6">
+                  {cardContent}
+                </Link>
+              );
+            }
+
+            return (
+              <button
+                key={card.label}
+                type="button"
+                onClick={card.action}
+                className="premium-card group relative min-h-48 overflow-hidden p-6 text-left"
+              >
+                {cardContent}
+              </button>
             );
           })}
         </div>
 
         <section className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
           <div className="soft-panel p-5">
-            <div className="mb-5">
-              <h2 className="inline-flex items-center gap-2 text-xl font-black text-navy-900">
-                <BarChart3 className="h-5 w-5 text-lavender-500" />
-                Weekly workspace activity
-              </h2>
-              <p className="mt-1 text-sm text-slate-500">Events captured across the last 7 days.</p>
+            <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="inline-flex items-center gap-2 text-xl font-black text-navy-900">
+                  <BarChart3 className="h-5 w-5 text-lavender-500" />
+                  Workspace Activity Trend
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Daily meetings that happened in active rooms for the selected timeframe.
+                </p>
+              </div>
+              <div className="inline-flex w-fit rounded-xl border border-white/70 bg-white/65 p-1 shadow-sm backdrop-blur">
+                {timeframeOptions.map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => setActivityTimeframe(option)}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-black transition ${
+                      activityTimeframe === option
+                        ? "bg-navy-900 text-white shadow-soft"
+                        : "text-slate-500 hover:bg-white hover:text-navy-900"
+                    }`}
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="h-72">
+            <div className="relative h-72">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={weeklyActivityData} margin={{ left: -20, right: 8, top: 10, bottom: 0 }}>
+                <AreaChart data={activityTrendData} margin={{ left: -20, right: 8, top: 10, bottom: 0 }}>
                   <defs>
                     <linearGradient id="activityGradient" x1="0" x2="0" y1="0" y2="1">
                       <stop offset="5%" stopColor="#8B7CFF" stopOpacity={0.38} />
@@ -247,12 +363,33 @@ const Dashboard = () => {
                     </linearGradient>
                   </defs>
                   <CartesianGrid stroke="#E8E3F6" strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fill: "#64748B", fontSize: 12 }} />
+                  <XAxis
+                    dataKey="day"
+                    axisLine={false}
+                    interval={activityTimeframe === "7D" ? 0 : "preserveStartEnd"}
+                    minTickGap={24}
+                    tickLine={false}
+                    tick={{ fill: "#64748B", fontSize: 12 }}
+                  />
                   <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{ fill: "#64748B", fontSize: 12 }} />
-                  <Tooltip contentStyle={{ border: "0", borderRadius: "12px", boxShadow: "0 18px 45px rgba(30, 27, 75, 0.12)" }} />
-                  <Area type="monotone" dataKey="count" stroke="#8B7CFF" strokeWidth={3} fill="url(#activityGradient)" />
+                  <Tooltip
+                    cursor={{ stroke: "#8B7CFF", strokeDasharray: "4 4" }}
+                    formatter={(value) => [value, "Meetings happened"]}
+                    labelFormatter={(_, payload) => payload?.[0]?.payload?.date || "Activity"}
+                    contentStyle={{ border: "0", borderRadius: "12px", boxShadow: "0 18px 45px rgba(30, 27, 75, 0.12)" }}
+                  />
+                  <Area type="monotone" dataKey="count" name="Meetings happened" stroke="#8B7CFF" strokeWidth={3} fill="url(#activityGradient)" />
                 </AreaChart>
               </ResponsiveContainer>
+              {!hasActivityTrend && !isAdminStatsLoading && (
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                  <div className="rounded-2xl border border-white/70 bg-white/80 px-5 py-4 text-center shadow-soft backdrop-blur-xl">
+                    <BarChart3 className="mx-auto mb-2 h-6 w-6 text-lavender-500" />
+                    <p className="text-sm font-black text-navy-900">No meetings yet</p>
+                    <p className="mt-1 text-xs text-slate-500">Meeting counts will appear here as teams start calls.</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -262,7 +399,7 @@ const Dashboard = () => {
                 <PieChartIcon className="h-5 w-5 text-mint-500" />
                 User roles
               </h2>
-              <p className="mt-1 text-sm text-slate-500">Role mix across workspace accounts.</p>
+              <p className="mt-1 text-sm text-slate-500">Current account count grouped by role.</p>
             </div>
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
@@ -279,7 +416,10 @@ const Dashboard = () => {
                       <Cell key={entry.name} fill={chartColors[index % chartColors.length]} />
                     ))}
                   </Pie>
-                  <Tooltip contentStyle={{ border: "0", borderRadius: "12px", boxShadow: "0 18px 45px rgba(30, 27, 75, 0.12)" }} />
+                  <Tooltip
+                    formatter={(value, name) => [`${value} users`, name]}
+                    contentStyle={{ border: "0", borderRadius: "12px", boxShadow: "0 18px 45px rgba(30, 27, 75, 0.12)" }}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -304,18 +444,39 @@ const Dashboard = () => {
                 <Video className="h-5 w-5 text-lavender-500" />
                 Room activity distribution
               </h2>
-              <p className="mt-1 text-sm text-slate-500">How room and meeting actions are trending.</p>
+              <p className="mt-1 text-sm text-slate-500">
+                Current totals for rooms, meetings, accepted invitations, and moderator actions.
+              </p>
             </div>
-            <div className="h-72">
+            <div className="relative h-72">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={roomActivityData} layout="vertical" margin={{ left: 8, right: 12, top: 4, bottom: 4 }}>
+                <BarChart data={roomActivityData} layout="vertical" margin={{ left: 10, right: 18, top: 6, bottom: 6 }}>
+                  <defs>
+                    <linearGradient id="roomBarGradient" x1="0" x2="1" y1="0" y2="0">
+                      <stop offset="0%" stopColor="#3BC98E" stopOpacity={0.92} />
+                      <stop offset="100%" stopColor="#8B7CFF" stopOpacity={0.86} />
+                    </linearGradient>
+                  </defs>
                   <CartesianGrid stroke="#E8E3F6" strokeDasharray="3 3" horizontal={false} />
                   <XAxis type="number" allowDecimals={false} axisLine={false} tickLine={false} tick={{ fill: "#64748B", fontSize: 12 }} />
-                  <YAxis type="category" dataKey="name" width={112} axisLine={false} tickLine={false} tick={{ fill: "#334155", fontSize: 12 }} />
-                  <Tooltip contentStyle={{ border: "0", borderRadius: "12px", boxShadow: "0 18px 45px rgba(30, 27, 75, 0.12)" }} />
-                  <Bar dataKey="value" radius={[0, 10, 10, 0]} fill="#3BC98E" barSize={18} />
+                  <YAxis type="category" dataKey="name" width={132} axisLine={false} tickLine={false} tick={{ fill: "#334155", fontSize: 12, fontWeight: 600 }} />
+                  <Tooltip
+                    cursor={{ fill: "rgba(139, 124, 255, 0.08)" }}
+                    content={<RoomActivityTooltip />}
+                    contentStyle={{ border: "0", borderRadius: "14px", boxShadow: "0 18px 45px rgba(30, 27, 75, 0.14)" }}
+                  />
+                  <Bar dataKey="value" radius={[0, 12, 12, 0]} fill="url(#roomBarGradient)" barSize={22} animationDuration={700} />
                 </BarChart>
               </ResponsiveContainer>
+              {!hasRoomActivity && !isAdminStatsLoading && (
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                  <div className="rounded-2xl border border-white/70 bg-white/80 px-5 py-4 text-center shadow-soft backdrop-blur-xl">
+                    <Video className="mx-auto mb-2 h-6 w-6 text-lavender-500" />
+                    <p className="text-sm font-black text-navy-900">No operational room activity yet</p>
+                    <p className="mt-1 text-xs text-slate-500">Current rooms and live operational totals will appear here.</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -326,7 +487,7 @@ const Dashboard = () => {
                   <Activity className="h-5 w-5 text-mint-500" />
                   Recent activity
                 </h2>
-                <p className="mt-1 text-sm text-slate-500">Compact view of the latest platform changes.</p>
+                <p className="mt-1 text-sm text-slate-500">Latest 5 operational events only.</p>
               </div>
               <Link to="/activity" className="btn-secondary w-fit">
                 View All Activity
