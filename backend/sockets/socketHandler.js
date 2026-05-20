@@ -748,6 +748,7 @@ const socketHandler = (io) => {
         micOn: false,
         cameraOn: false,
         screenSharing: false,
+        speaking: false,
         live: true,
       };
       const existingUsers = getCallUsers(channel);
@@ -820,6 +821,7 @@ const socketHandler = (io) => {
         micOn: !!micOn,
         cameraOn: !!cameraOn,
         screenSharing: !!screenSharing,
+        speaking: !!micOn && !!callUsers.get(socket.id).speaking,
         live: true,
       };
 
@@ -830,6 +832,29 @@ const socketHandler = (io) => {
           }
         }
       }
+
+      callUsers.set(socket.id, updatedUser);
+      io.to(channel).emit("meeting-participants", {
+        roomId,
+        meetingId,
+        users: sortPresenterFirst(getCallUsers(channel)),
+      });
+    });
+
+    socket.on("meeting-speaking-state", ({ roomId, meetingId = null, speaking = false }) => {
+      if (!roomId) return;
+
+      const channel = getCallChannel(roomId, meetingId);
+      const callUsers = callUsersByRoom.get(channel);
+
+      if (!callUsers?.has(socket.id)) return;
+
+      const currentUser = callUsers.get(socket.id);
+      const updatedUser = {
+        ...currentUser,
+        speaking: !!speaking && !!currentUser.micOn,
+        live: true,
+      };
 
       callUsers.set(socket.id, updatedUser);
       io.to(channel).emit("meeting-participants", {

@@ -53,6 +53,7 @@ const normalizeParticipant = (participant) => {
     micOn: !!participant?.micOn,
     cameraOn: !!participant?.cameraOn,
     screenSharing: !!participant?.screenSharing,
+    speaking: !!participant?.speaking,
     live: participant?.live ?? !participant?.leftAt,
   };
 };
@@ -85,6 +86,9 @@ const MeetingDetails = () => {
   const toastTimeoutsRef = useRef(new Map());
   const mediaStateRef = useRef({ micOn: false, cameraOn: false, screenSharing: false });
   const sidePanelRef = useRef(null);
+  const audioContextRef = useRef(null);
+  const voiceFrameRef = useRef(null);
+  const speakingStateRef = useRef(false);
   const [meeting, setMeeting] = useState(null);
   const [localStream, setLocalStream] = useState(null);
   const [remoteStream, setRemoteStream] = useState(null);
@@ -246,12 +250,87 @@ const MeetingDetails = () => {
     }
 
     socketRef.current?.emit("typing-stop", { roomId, meetingId });
+    socketRef.current?.emit("meeting-speaking-state", { roomId, meetingId, speaking: false });
     socketRef.current?.emit("leave-meeting", { roomId, meetingId });
     socketRef.current?.disconnect();
     socketRef.current = null;
     resetPeerConnection();
     cleanupMedia();
   }, [cleanupMedia, meetingId, resetPeerConnection, roomId]);
+
+  useEffect(() => {
+    const audioTrack = localStream?.getAudioTracks()[0];
+
+    if (!isMicOn || !audioTrack || !localStream) {
+      if (speakingStateRef.current) {
+        speakingStateRef.current = false;
+        socketRef.current?.emit("meeting-speaking-state", { roomId, meetingId, speaking: false });
+        setSelfParticipantState({ speaking: false });
+      }
+
+      return undefined;
+    }
+
+    const AudioContextConstructor = window.AudioContext || window.webkitAudioContext;
+
+    if (!AudioContextConstructor) {
+      return undefined;
+    }
+
+    const audioContext = new AudioContextConstructor();
+    const analyser = audioContext.createAnalyser();
+    const source = audioContext.createMediaStreamSource(new MediaStream([audioTrack]));
+    let quietFrames = 0;
+
+    audioContextRef.current = audioContext;
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.65;
+    const samples = new Uint8Array(analyser.fftSize);
+    source.connect(analyser);
+
+    const setSpeaking = (speaking) => {
+      if (speakingStateRef.current === speaking) return;
+
+      speakingStateRef.current = speaking;
+      socketRef.current?.emit("meeting-speaking-state", { roomId, meetingId, speaking });
+      setSelfParticipantState({ speaking });
+    };
+
+    const measureVoice = () => {
+      analyser.getByteTimeDomainData(samples);
+      const volume =
+        samples.reduce((sum, sample) => {
+          const centeredSample = sample - 128;
+          return sum + centeredSample * centeredSample;
+        }, 0) / samples.length;
+
+      if (volume > 95) {
+        quietFrames = 0;
+        setSpeaking(true);
+      } else {
+        quietFrames += 1;
+        if (quietFrames > 12) {
+          setSpeaking(false);
+        }
+      }
+
+      voiceFrameRef.current = window.requestAnimationFrame(measureVoice);
+    };
+
+    measureVoice();
+
+    return () => {
+      if (voiceFrameRef.current) {
+        window.cancelAnimationFrame(voiceFrameRef.current);
+        voiceFrameRef.current = null;
+      }
+
+      source.disconnect();
+      audioContext.close().catch(() => {});
+      audioContextRef.current = null;
+      setSpeaking(false);
+    };
+  }, [isMicOn, localStream, meetingId, roomId, setSelfParticipantState]);
 
   const createPeerConnection = useCallback(
     (targetSocketId) => {
@@ -610,6 +689,7 @@ const MeetingDetails = () => {
                 micOn: false,
                 cameraOn: false,
                 screenSharing: false,
+                speaking: false,
                 live: true,
               },
             ]);
@@ -907,6 +987,7 @@ const MeetingDetails = () => {
   const renderParticipantTile = (participant, { compact = false } = {}) => {
     const isSelf = participant.id === user?.id;
     const isFocused = isSelf || participant.socketId === targetSocketIdRef.current;
+    const isSpeaking = participant.live && participant.micOn && participant.speaking;
 
     return (
       <article
@@ -914,10 +995,20 @@ const MeetingDetails = () => {
         className={`relative grid overflow-hidden rounded-2xl border bg-slate-950 shadow-lift transition-all duration-300 ${
           compact ? "h-28 min-w-[170px] snap-start" : "min-h-[190px]"
         } ${
-          isFocused ? "border-mint-300/50 ring-2 ring-mint-300/15" : "border-white/10"
+          isSpeaking
+            ? "border-mint-300 ring-4 ring-mint-300/25"
+            : isFocused
+              ? "border-mint-300/50 ring-2 ring-mint-300/15"
+              : "border-white/10"
         }`}
       >
         {renderParticipantMedia(participant, { compact })}
+        {isSpeaking && (
+          <div className={`absolute right-3 top-3 inline-flex items-center gap-1.5 rounded-full border border-mint-300/60 bg-mint-300/25 font-bold text-mint-100 shadow-soft backdrop-blur ${compact ? "px-2 py-1 text-[11px]" : "px-3 py-1.5 text-xs"}`}>
+            <Mic className="h-3.5 w-3.5 animate-pulse" />
+            {!compact && <span>Speaking</span>}
+          </div>
+        )}
         <div className={`absolute inset-x-0 bottom-0 flex items-center justify-between gap-3 bg-gradient-to-t from-black/80 to-transparent ${compact ? "px-2 py-2" : "px-3 py-3"}`}>
           <div className="min-w-0">
             <p className={`truncate font-semibold text-white ${compact ? "text-xs" : "text-sm"}`}>{isSelf ? "You" : participant.name}</p>
@@ -925,7 +1016,7 @@ const MeetingDetails = () => {
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
             {participant.screenSharing && <MonitorUp className="h-4 w-4 text-mint-300" />}
-            {participant.micOn ? <Mic className="h-4 w-4 text-mint-300" /> : <MicOff className="h-4 w-4 text-slate-300" />}
+            {participant.micOn ? <Mic className={`h-4 w-4 ${isSpeaking ? "animate-pulse text-mint-100" : "text-mint-300"}`} /> : <MicOff className="h-4 w-4 text-slate-300" />}
           </div>
         </div>
       </article>
@@ -1015,7 +1106,7 @@ const MeetingDetails = () => {
       </div>
 
       {sidePanel && (
-        <aside className="absolute inset-y-0 right-0 z-30 flex w-full max-w-[380px] flex-col border-l border-white/20 bg-white/95 text-slate-950 shadow-lift backdrop-blur-2xl sm:my-4 sm:mr-4 sm:rounded-2xl sm:border">
+        <aside className="absolute inset-y-0 right-0 z-30 flex w-full max-w-[380px] flex-col border-l border-white/20 bg-white/95 text-slate-950 shadow-lift backdrop-blur-2xl sm:my-4 sm:mr-4 sm:rounded-2xl sm:border md:relative md:inset-auto md:z-20 md:my-0 md:mr-0 md:h-auto md:w-[380px] md:shrink-0 md:rounded-none md:border-y-0 md:border-r-0">
           <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
             <h2 className="inline-flex items-center gap-2 font-black text-navy-900">
               {sidePanel === "participants" ? <Users className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
@@ -1041,12 +1132,12 @@ const MeetingDetails = () => {
                       </div>
                       <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500">
                         <Circle className={`h-2 w-2 ${participant.live ? "fill-mint-500 text-mint-500" : "fill-slate-300 text-slate-300"}`} />
-                        {participant.live ? "Live now" : "Offline"}
+                        {participant.speaking && participant.micOn ? "Speaking now" : participant.live ? "Live now" : "Offline"}
                       </p>
                     </div>
                     <div className="flex items-center gap-1.5 text-slate-600">
-                      <StatusIcon active={participant.micOn} label={participant.micOn ? "Mic on" : "Mic off"}>
-                        {participant.micOn ? <Mic className="h-3.5 w-3.5" /> : <MicOff className="h-3.5 w-3.5" />}
+                      <StatusIcon active={participant.micOn} label={participant.speaking && participant.micOn ? "Speaking" : participant.micOn ? "Mic on" : "Mic off"}>
+                        {participant.micOn ? <Mic className={`h-3.5 w-3.5 ${participant.speaking ? "animate-pulse" : ""}`} /> : <MicOff className="h-3.5 w-3.5" />}
                       </StatusIcon>
                       <StatusIcon active={participant.cameraOn} label={participant.cameraOn ? "Camera on" : "Camera off"}>
                         {participant.cameraOn ? <Camera className="h-3.5 w-3.5" /> : <CameraOff className="h-3.5 w-3.5" />}
