@@ -48,6 +48,7 @@ const normalizeParticipant = (participant) => {
     name: user.name || participant?.name || "Participant",
     email: user.email || participant?.email,
     role: user.role || participant?.role || "participant",
+    avatarUrl: user.avatarUrl || participant?.avatarUrl || "",
     micOn: !!participant?.micOn,
     cameraOn: !!participant?.cameraOn,
     screenSharing: !!participant?.screenSharing,
@@ -604,6 +605,7 @@ const MeetingDetails = () => {
                 name: user?.name,
                 email: user?.email,
                 role: user?.role,
+                avatarUrl: user?.avatarUrl || "",
                 micOn: false,
                 cameraOn: false,
                 screenSharing: false,
@@ -829,7 +831,17 @@ const MeetingDetails = () => {
     });
 
     if (user?.id && !byId.has(user.id)) {
-      byId.set(user.id, normalizeParticipant({ id: user.id, name: user.name, email: user.email, role: user.role, live: true }));
+      byId.set(
+        user.id,
+        normalizeParticipant({
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          avatarUrl: user.avatarUrl || "",
+          live: true,
+        })
+      );
     }
 
     return Array.from(byId.values());
@@ -843,8 +855,12 @@ const MeetingDetails = () => {
     : [];
 
   const renderAvatar = (participant, size = "h-20 w-20 text-2xl") => (
-    <div className={`${size} grid place-items-center rounded-full bg-gradient-to-br from-lavender-200 to-mint-300 font-black text-navy-900 shadow-soft`}>
-      {getInitials(participant.name)}
+    <div className={`${size} grid place-items-center overflow-hidden rounded-full bg-gradient-to-br from-lavender-200 to-mint-300 font-black text-navy-900 shadow-soft`}>
+      {participant.avatarUrl ? (
+        <img src={participant.avatarUrl} alt="" className="h-full w-full object-cover" />
+      ) : (
+        getInitials(participant.name)
+      )}
     </div>
   );
 

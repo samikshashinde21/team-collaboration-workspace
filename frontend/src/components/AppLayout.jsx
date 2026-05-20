@@ -432,6 +432,12 @@ const AppLayout = () => {
     reader.readAsDataURL(file);
   };
 
+  const handleAvatarRemove = () => {
+    setProfileForm((currentForm) => ({ ...currentForm, avatarUrl: "" }));
+    setProfileError("");
+    setProfileMessage("");
+  };
+
   const handleProfileSave = async (event) => {
     event.preventDefault();
     setProfileError("");
@@ -833,6 +839,16 @@ const AppLayout = () => {
                       <input type="file" accept="image/png,image/jpeg,image/webp" onChange={handleAvatarChange} className="hidden" />
                     </label>
                   </div>
+                  {profileForm.avatarUrl && (
+                    <button
+                      type="button"
+                      onClick={handleAvatarRemove}
+                      className="mt-3 inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white/75 px-3 py-2 text-sm font-semibold text-red-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-red-50"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Remove photo
+                    </button>
+                  )}
                   <h3 className="mt-4 text-lg font-black text-navy-900">{profileForm.name || "Your profile"}</h3>
                   <p className="mt-1 max-w-full truncate text-sm text-slate-500">{profileForm.email}</p>
                   <span className={`mt-3 rounded-full px-3 py-1 text-xs font-black capitalize ${roleBadgeClassName[user?.role] || roleBadgeClassName.user}`}>

@@ -56,6 +56,7 @@ const formatMeeting = (meeting) => {
           name: meeting.startedBy.name,
           email: meeting.startedBy.email,
           role: meeting.startedBy.role,
+          avatarUrl: meeting.startedBy.avatarUrl || "",
         }
       : null,
     scheduledBy: meeting.scheduledBy
@@ -64,6 +65,7 @@ const formatMeeting = (meeting) => {
           name: meeting.scheduledBy.name,
           email: meeting.scheduledBy.email,
           role: meeting.scheduledBy.role,
+          avatarUrl: meeting.scheduledBy.avatarUrl || "",
         }
       : null,
     participants: participants.map((participant) => ({
@@ -73,6 +75,7 @@ const formatMeeting = (meeting) => {
             name: participant.user.name,
             email: participant.user.email,
             role: participant.user.role,
+            avatarUrl: participant.user.avatarUrl || "",
           }
         : null,
       joinedAt: participant.joinedAt,
@@ -92,9 +95,9 @@ const formatMeeting = (meeting) => {
 
 const populateMeeting = (query) =>
   query
-    .populate("startedBy", "name email role")
-    .populate("scheduledBy", "name email role")
-    .populate("participants.user", "name email role");
+    .populate("startedBy", "name email role avatarUrl")
+    .populate("scheduledBy", "name email role avatarUrl")
+    .populate("participants.user", "name email role avatarUrl");
 
 const findAccessibleRoom = async (req, roomId) => {
   if (!mongoose.Types.ObjectId.isValid(roomId)) {
