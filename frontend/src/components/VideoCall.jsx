@@ -242,7 +242,7 @@ const VideoCall = ({ roomId }) => {
       setIsCameraOn(stream.getVideoTracks().some((track) => track.enabled));
       setIsMicOn(stream.getAudioTracks().some((track) => track.enabled));
 
-      const socket = io("http://localhost:5000", {
+      const socket = io("import.meta.env.VITE_API_URL", {
         auth: { token },
       });
 
