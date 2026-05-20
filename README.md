@@ -45,7 +45,6 @@ Create `backend/.env`:
 PORT=5000
 MONGO_URI=your_mongodb_connection_string
 JWT_SECRET=your_jwt_secret
-JWT_EXPIRES_IN=7d
 CLIENT_URL=http://localhost:5173
 ```
 
