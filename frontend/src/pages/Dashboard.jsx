@@ -221,9 +221,6 @@ const Dashboard = () => {
       } catch (err) {
         if (isMounted) {
           setUserDashboardError(err.response?.data?.message || "Could not load your dashboard.");
-          setRooms([]);
-          setInvitations([]);
-          setMeetings([]);
         }
       } finally {
         if (isMounted) {

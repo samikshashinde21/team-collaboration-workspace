@@ -647,6 +647,21 @@ const RoomDetails = () => {
         return;
       }
 
+      try {
+        const { data: latestMeetings } = await api.get(`/rooms/${room._id}/meetings`);
+        const latestActiveMeeting = sortMeetingsLatestFirst(
+          latestMeetings.filter((meeting) => meeting.status === "active")
+        )[0];
+
+        if (latestActiveMeeting?.id) {
+          setMeetings(latestMeetings);
+          navigate(`/rooms/${room._id}/meeting/${latestActiveMeeting.id}`);
+          return;
+        }
+      } catch {
+        // Keep the original start error visible if recovery cannot find a live meeting.
+      }
+
       setError(err.response?.data?.message || "Could not start meeting.");
       setActiveTab("meetings");
     } finally {

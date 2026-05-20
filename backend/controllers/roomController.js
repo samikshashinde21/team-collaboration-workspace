@@ -434,15 +434,15 @@ const startMeeting = async (req, res) => {
     const populatedMeeting = await populateMeeting(Meeting.findById(meeting._id));
     emitRoomMeetingUpdate(req.app.get("io"), room, "room-meeting-updated", populatedMeeting);
 
-    await createActivityLog({
+    createActivityLog({
       io: req.app.get("io"),
       actor: req.user._id,
       room: room._id,
       meeting: meeting._id,
       action: ACTIONS.MEETING_STARTED,
       description: `${req.user.name} started ${meeting.title || "a meeting"} in ${room.name}`,
-    });
-    await createNotifications({
+    }).catch(() => {});
+    createNotifications({
       io: req.app.get("io"),
       recipients: (room.members || []).filter((member) => member.toString() !== req.user._id.toString()),
       type: "MEETING_STARTED",
@@ -450,7 +450,7 @@ const startMeeting = async (req, res) => {
       message: `${req.user.name} started a meeting in ${room.name}.`,
       room: room._id,
       meeting: meeting._id,
-    });
+    }).catch(() => {});
 
     res.status(201).json(formatMeeting(populatedMeeting));
   } catch (error) {

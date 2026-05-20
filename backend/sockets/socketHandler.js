@@ -1,7 +1,6 @@
 const jwt = require("jsonwebtoken");
 const Message = require("../models/Message");
 const Meeting = require("../models/Meeting");
-const MeetingMessage = require("../models/MeetingMessage");
 const Room = require("../models/Room");
 const RoomInvitation = require("../models/RoomInvitation");
 const User = require("../models/User");
@@ -32,13 +31,31 @@ const formatMessage = (message) => ({
 });
 
 const formatMeetingMessage = (message) => ({
-  id: message._id.toString(),
+  id: message.id,
   room: message.room.toString(),
   meeting: message.meeting.toString(),
   content: message.content,
-  sender: formatUser(message.sender),
+  sender: message.sender,
   createdAt: message.createdAt,
 });
+
+const meetingMessagesByChannel = new Map();
+
+const getTemporaryMeetingMessages = (channel) => meetingMessagesByChannel.get(channel) || [];
+
+const addTemporaryMeetingMessage = ({ channel, roomId, meetingId, sender, content }) => {
+  const message = {
+    id: `${Date.now()}-${sender.id}-${Math.random().toString(36).slice(2, 8)}`,
+    room: roomId,
+    meeting: meetingId,
+    content,
+    sender,
+    createdAt: new Date().toISOString(),
+  };
+  const messages = [...getTemporaryMeetingMessages(channel), message].slice(-100);
+  meetingMessagesByChannel.set(channel, messages);
+  return message;
+};
 
 const formatMeetingForRoom = (meeting) => {
   const participants = meeting.participants || [];
@@ -220,8 +237,69 @@ const getCallUsers = (channel) => {
   return users ? Array.from(users.values()) : [];
 };
 
-const getActiveMeetingViewerIds = (meetingId) =>
-  new Set(getCallUsers(`meeting:${meetingId}`).map((user) => user.id));
+const sortPresenterFirst = (users) =>
+  [...users].sort((a, b) => Number(Boolean(b.screenSharing)) - Number(Boolean(a.screenSharing)));
+
+const emitCallParticipants = (io, channel, roomId, meetingId) => {
+  io.to(channel).emit("meeting-participants", {
+    roomId,
+    meetingId,
+    users: sortPresenterFirst(getCallUsers(channel)),
+  });
+};
+
+const canModerateMeeting = async (moderator, roomId, meetingId) => {
+  if (!isModeratorOrAdmin(moderator)) {
+    return { allowed: false, message: "Insufficient permissions" };
+  }
+
+  const [room, meeting] = await Promise.all([
+    findRoomForAccess(roomId),
+    Meeting.findOne({ _id: meetingId, room: roomId, status: "active" }),
+  ]);
+
+  if (!room) {
+    return { allowed: false, message: "Room not found" };
+  }
+
+  const access = canAccessRoom(moderator, room);
+
+  if (!access.allowed) {
+    return { allowed: false, message: access.message };
+  }
+
+  if (!meeting) {
+    return { allowed: false, message: "Meeting not found or ended" };
+  }
+
+  return { allowed: true, room, meeting };
+};
+
+const getTargetCallEntries = (channel, targetUserId) => {
+  const callUsers = callUsersByRoom.get(channel);
+
+  if (!callUsers) return [];
+
+  return Array.from(callUsers.entries()).filter(([, callUser]) => callUser.id === targetUserId);
+};
+
+const updateTargetCallState = (channel, targetUserId, nextState) => {
+  const callUsers = callUsersByRoom.get(channel);
+
+  if (!callUsers) return [];
+
+  const updatedUsers = [];
+
+  for (const [socketId, callUser] of callUsers.entries()) {
+    if (callUser.id !== targetUserId) continue;
+
+    const updatedUser = { ...callUser, ...nextState, live: true };
+    callUsers.set(socketId, updatedUser);
+    updatedUsers.push(updatedUser);
+  }
+
+  return updatedUsers;
+};
 
 const emitRoomMeetingUpdate = async (io, roomId, meetingId) => {
   if (!io || !roomId || !meetingId) return;
@@ -302,6 +380,9 @@ const removeSocketFromCall = async (io, socket, callRoom) => {
 
   if (callUsers.size === 0) {
     callUsersByRoom.delete(channel);
+    if (meetingId) {
+      meetingMessagesByChannel.delete(channel);
+    }
   }
 
   socket.leave(channel);
@@ -310,8 +391,9 @@ const removeSocketFromCall = async (io, socket, callRoom) => {
     meetingId,
     socketId: socket.id,
     user: removedUser || formatUser(socket.user),
-    users: getCallUsers(channel),
+    users: sortPresenterFirst(getCallUsers(channel)),
   });
+  emitCallParticipants(io, channel, roomId, meetingId);
 };
 const socketHandler = (io) => {
   io.use(async (socket, next) => {
@@ -519,23 +601,16 @@ const socketHandler = (io) => {
           return callback?.({ ok: false, message: "Meeting not found or ended" });
         }
 
-        const message = await MeetingMessage.create({
-          room: roomId,
-          meeting: meetingId,
-          sender: socket.user._id,
+        const channel = getCallChannel(roomId, meetingId);
+        const formattedMessage = addTemporaryMeetingMessage({
+          channel,
+          roomId,
+          meetingId,
+          sender: formatUser(socket.user),
           content: trimmedContent,
         });
 
-        const savedMessage = await message.populate("sender", "name email role");
-        const formattedMessage = formatMeetingMessage(savedMessage);
-        const channel = getCallChannel(roomId, meetingId);
-        const activeViewerIds = getActiveMeetingViewerIds(meetingId);
-        const recipientIds = meeting.participants
-          .map((participant) => participant.user.toString())
-          .filter((userId) => userId !== socket.user._id.toString() && !activeViewerIds.has(userId));
-
         io.to(channel).emit("meeting-message", formattedMessage);
-        await incrementUnreadForUsers({ io, userIds: recipientIds, roomId, meetingId });
         socket.to(channel).emit("typing-stop", {
           roomId,
           meetingId,
@@ -666,6 +741,10 @@ const socketHandler = (io) => {
       const callUser = {
         socketId: socket.id,
         ...formatUser(socket.user),
+        micOn: false,
+        cameraOn: false,
+        screenSharing: false,
+        live: true,
       };
       const existingUsers = getCallUsers(channel);
 
@@ -677,15 +756,8 @@ const socketHandler = (io) => {
 
       callUsersByRoom.get(channel).set(socket.id, callUser);
 
-      const meetingMessages = meetingId
-        ? await MeetingMessage.find({ meeting: meetingId })
-            .sort({ createdAt: 1 })
-            .limit(50)
-            .populate("sender", "name email role")
-        : [];
-
       if (meetingId) {
-        socket.emit("meeting-messages", meetingMessages.map(formatMeetingMessage));
+        socket.emit("meeting-messages", getTemporaryMeetingMessages(channel).map(formatMeetingMessage));
       }
 
       socket.to(channel).emit("call-user-joined", {
@@ -693,16 +765,16 @@ const socketHandler = (io) => {
         meetingId,
         socketId: socket.id,
         user: callUser,
-        users: getCallUsers(channel),
+        users: sortPresenterFirst(getCallUsers(channel)),
       });
 
       socket.to(channel).emit("meeting-participants", {
         roomId,
         meetingId,
-        users: getCallUsers(channel),
+        users: sortPresenterFirst(getCallUsers(channel)),
       });
 
-      callback?.({ ok: true, users: existingUsers });
+      callback?.({ ok: true, users: sortPresenterFirst(existingUsers) });
     };
 
     const handleLeaveMeetingCall = async ({ roomId, meetingId = null }) => {
@@ -720,7 +792,7 @@ const socketHandler = (io) => {
           io.to(channel).emit("meeting-participants", {
             roomId,
             meetingId,
-            users: getCallUsers(channel),
+            users: sortPresenterFirst(getCallUsers(channel)),
           });
         }
       }
@@ -730,6 +802,189 @@ const socketHandler = (io) => {
     socket.on("join-meeting", handleJoinMeetingCall);
     socket.on("leave-call", handleLeaveMeetingCall);
     socket.on("leave-meeting", handleLeaveMeetingCall);
+
+    socket.on("meeting-media-state", ({ roomId, meetingId = null, micOn = false, cameraOn = false, screenSharing = false }) => {
+      if (!roomId) return;
+
+      const channel = getCallChannel(roomId, meetingId);
+      const callUsers = callUsersByRoom.get(channel);
+
+      if (!callUsers?.has(socket.id)) return;
+
+      const updatedUser = {
+        ...callUsers.get(socket.id),
+        micOn: !!micOn,
+        cameraOn: !!cameraOn,
+        screenSharing: !!screenSharing,
+        live: true,
+      };
+
+      if (updatedUser.screenSharing) {
+        for (const [participantSocketId, participant] of callUsers.entries()) {
+          if (participantSocketId !== socket.id && participant.screenSharing) {
+            callUsers.set(participantSocketId, { ...participant, screenSharing: false });
+          }
+        }
+      }
+
+      callUsers.set(socket.id, updatedUser);
+      io.to(channel).emit("meeting-participants", {
+        roomId,
+        meetingId,
+        users: sortPresenterFirst(getCallUsers(channel)),
+      });
+    });
+
+    socket.on("meeting-moderation-action", async ({ roomId, meetingId, targetUserId, action }, callback) => {
+      try {
+        if (!roomId || !meetingId || !targetUserId || !action) {
+          return callback?.({ ok: false, message: "Meeting, participant, and action are required" });
+        }
+
+        const permission = await canModerateMeeting(socket.user, roomId, meetingId);
+
+        if (!permission.allowed) {
+          return callback?.({ ok: false, message: permission.message });
+        }
+
+        const moderator = formatUser(socket.user);
+        const targetUser = await User.findById(targetUserId).select("name email role");
+
+        if (!targetUser) {
+          return callback?.({ ok: false, message: "Participant not found" });
+        }
+
+        if (targetUser._id.toString() === socket.user._id.toString()) {
+          return callback?.({ ok: false, message: "You cannot moderate yourself" });
+        }
+
+        if (targetUser.role === "admin" && socket.user.role !== "admin") {
+          return callback?.({ ok: false, message: "Cannot moderate an admin" });
+        }
+
+        const channel = getCallChannel(roomId, meetingId);
+        const targetEntries = getTargetCallEntries(channel, targetUserId);
+
+        if (!targetEntries.length) {
+          return callback?.({ ok: false, message: "Participant is no longer in the meeting" });
+        }
+
+        const target = formatUser(targetUser);
+        const actionMessages = {
+          mute: `${moderator.name} muted your microphone`,
+          cameraOff: `${moderator.name} turned off your camera`,
+          stopScreenShare: `${moderator.name} stopped your screen sharing`,
+          remove: "You were removed from the meeting",
+        };
+        const confirmationMessages = {
+          mute: `${target.name}'s microphone was muted`,
+          cameraOff: `${target.name}'s camera was turned off`,
+          stopScreenShare: `${target.name}'s screen sharing was stopped`,
+          remove: `${target.name} was removed from the meeting`,
+        };
+
+        if (!actionMessages[action]) {
+          return callback?.({ ok: false, message: "Unsupported meeting moderation action" });
+        }
+
+        if (action === "mute") {
+          updateTargetCallState(channel, targetUserId, { micOn: false });
+          io.to(`user:${targetUserId}`).emit("meeting-force-mute", {
+            roomId,
+            meetingId,
+            moderator,
+            message: actionMessages[action],
+          });
+        }
+
+        if (action === "cameraOff") {
+          updateTargetCallState(channel, targetUserId, { cameraOn: false });
+          io.to(`user:${targetUserId}`).emit("meeting-force-camera-off", {
+            roomId,
+            meetingId,
+            moderator,
+            message: actionMessages[action],
+          });
+        }
+
+        if (action === "stopScreenShare") {
+          updateTargetCallState(channel, targetUserId, { screenSharing: false });
+          io.to(`user:${targetUserId}`).emit("meeting-force-screen-share-stop", {
+            roomId,
+            meetingId,
+            moderator,
+            message: actionMessages[action],
+          });
+        }
+
+        if (action === "remove") {
+          const callUsers = callUsersByRoom.get(channel);
+
+          for (const [socketId, targetCallUser] of targetEntries) {
+            const targetSocket = io.sockets.sockets.get(socketId);
+            callUsers?.delete(socketId);
+
+            if (targetSocket) {
+              for (const callRoom of Array.from(targetSocket.callRooms || [])) {
+                const callChannel = typeof callRoom === "string" ? callRoom : callRoom.channel;
+
+                if (callChannel === channel) {
+                  targetSocket.callRooms.delete(callRoom);
+                }
+              }
+
+              targetSocket.leave(channel);
+              targetSocket.emit("meeting-kicked", {
+                roomId,
+                meetingId,
+                moderator,
+                user: targetCallUser,
+                message: actionMessages[action],
+              });
+            }
+          }
+
+          await markMeetingParticipantLeft(meetingId, targetUserId);
+          await emitRoomMeetingUpdate(io, roomId, meetingId);
+
+          if (callUsers?.size === 0) {
+            callUsersByRoom.delete(channel);
+            meetingMessagesByChannel.delete(channel);
+          }
+
+          io.to(channel).emit("call-user-left", {
+            roomId,
+            meetingId,
+            socketId: targetEntries[0][0],
+            user: target,
+            users: sortPresenterFirst(getCallUsers(channel)),
+          });
+        }
+
+        emitCallParticipants(io, channel, roomId, meetingId);
+        socket.emit("meeting-moderation-confirmation", {
+          roomId,
+          meetingId,
+          action,
+          target,
+          message: confirmationMessages[action],
+        });
+
+        await createNotification({
+          io,
+          recipient: targetUserId,
+          type: action === "remove" ? "REMOVED_FROM_ROOM" : "MODERATION_ACTION",
+          title: action === "remove" ? "Removed from meeting" : "Meeting moderation",
+          message: actionMessages[action],
+          room: roomId,
+          meeting: meetingId,
+        });
+
+        return callback?.({ ok: true, message: confirmationMessages[action] });
+      } catch (err) {
+        return callback?.({ ok: false, message: "Could not apply meeting moderation" });
+      }
+    });
 
     socket.on("subscribe-activity", async ({ roomId = null, meetingId = null } = {}, callback) => {
       try {
@@ -807,6 +1062,7 @@ const socketHandler = (io) => {
       if (!roomId) return;
 
       try {
+        const channel = getCallChannel(roomId, meetingId);
         const room = await findRoomForAccess(roomId);
 
         if (!room) {
@@ -828,11 +1084,33 @@ const socketHandler = (io) => {
           });
         }
 
-        socket.to(getCallChannel(roomId, meetingId)).emit("screen-share-start", {
+        const callUsers = callUsersByRoom.get(channel);
+        if (callUsers?.has(socket.id)) {
+          for (const [participantSocketId, participant] of callUsers.entries()) {
+            if (participantSocketId !== socket.id && participant.screenSharing) {
+              callUsers.set(participantSocketId, {
+                ...participant,
+                screenSharing: false,
+              });
+            }
+          }
+
+          callUsers.set(socket.id, {
+            ...callUsers.get(socket.id),
+            screenSharing: true,
+          });
+        }
+
+        socket.to(channel).emit("screen-share-start", {
           roomId,
           meetingId,
           socketId: socket.id,
           user: formatUser(socket.user),
+        });
+        io.to(channel).emit("meeting-participants", {
+          roomId,
+          meetingId,
+          users: sortPresenterFirst(getCallUsers(channel)),
         });
       } catch (err) {
         socket.emit("screen-share-error", {
@@ -1036,11 +1314,25 @@ const socketHandler = (io) => {
         return;
       }
 
-      socket.to(getCallChannel(roomId, meetingId)).emit("screen-share-stop", {
+      const channel = getCallChannel(roomId, meetingId);
+      const callUsers = callUsersByRoom.get(channel);
+      if (callUsers?.has(socket.id)) {
+        callUsers.set(socket.id, {
+          ...callUsers.get(socket.id),
+          screenSharing: false,
+        });
+      }
+
+      socket.to(channel).emit("screen-share-stop", {
         roomId,
         meetingId,
         socketId: socket.id,
         user: formatUser(socket.user),
+      });
+      io.to(channel).emit("meeting-participants", {
+        roomId,
+        meetingId,
+        users: sortPresenterFirst(getCallUsers(channel)),
       });
     });
 

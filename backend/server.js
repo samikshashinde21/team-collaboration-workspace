@@ -22,6 +22,9 @@ connectDB();
 
 const app = express();
 const server = http.createServer(app);
+const apiRateLimitWindowMs = Number(process.env.API_RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000;
+const apiRateLimitMax = Number(process.env.API_RATE_LIMIT_MAX) || 2000;
+const authRateLimitMax = Number(process.env.AUTH_RATE_LIMIT_MAX) || 50;
 
 const io = new Server(server, {
   cors: {
@@ -34,14 +37,28 @@ app.use(express.json({ limit: "1mb" }));
 app.use(cors({ origin: process.env.CLIENT_URL || "http://localhost:5173" }));
 app.use(helmet());
 
-app.use(
-  rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 100,
-  })
-);
+app.set("trust proxy", Number(process.env.TRUST_PROXY) || 1);
 
-app.use("/api/auth", authRoutes);
+const apiLimiter = rateLimit({
+  windowMs: apiRateLimitWindowMs,
+  max: apiRateLimitMax,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.method === "OPTIONS",
+  message: { message: "Too many requests. Please wait a moment and try again." },
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: authRateLimitMax,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.method === "OPTIONS",
+  message: { message: "Too many authentication attempts. Please try again later." },
+});
+
+app.use("/api", apiLimiter);
+app.use("/api/auth", authLimiter, authRoutes);
 app.use("/api/activity", activityRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/invitations", invitationRoutes);
