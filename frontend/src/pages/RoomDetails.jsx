@@ -130,7 +130,7 @@ const ParticipantModerationMenu = ({ roomId, member, onRemoved }) => {
   useEffect(() => {
     if (!token) return;
 
-    socketRef.current = io("import.meta.env.VITE_API_URL", { auth: { token } });
+    socketRef.current = io(import.meta.env.VITE_SOCKET_URL)", { auth: { token } });
     socketRef.current.on("connect_error", () => {});
 
     return () => {
@@ -391,7 +391,7 @@ const RoomDetails = () => {
   useEffect(() => {
     if (!token || !id) return undefined;
 
-    const socket = io("import.meta.env.VITE_API_URL", { auth: { token } });
+    const socket = io(import.meta.env.VITE_SOCKET_URL)", { auth: { token } });
 
     socket.on("connect", () => {
       socket.emit("subscribe-activity", { roomId: id });

@@ -253,7 +253,7 @@ const Dashboard = () => {
   useEffect(() => {
     if (!token) return undefined;
 
-    const socket = io("import.meta.env.VITE_API_URL", { auth: { token } });
+    const socket = io(import.meta.env.VITE_SOCKET_URL)", { auth: { token } });
 
     socket.on("connect", () => {
       socket.emit("subscribe-activity");
