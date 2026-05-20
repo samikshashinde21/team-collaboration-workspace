@@ -464,19 +464,26 @@ const MeetingDetails = () => {
   const handleLeaveMeeting = async () => {
     setIsEnding(true);
 
-    try {
-      await api.patch(`/rooms/${roomId}/meetings/${meetingId}/end`);
-    } catch (err) {
-      setError(err.response?.data?.message || "Could not end meeting.");
-    } finally {
-      leaveSocketMeeting();
-      navigate(`/rooms/${roomId}`, { replace: true });
+    if (user?.role === "admin" || user?.role === "moderator") {
+      try {
+        await api.patch(`/rooms/${roomId}/meetings/${meetingId}/end`);
+      } catch (err) {
+        setError(err.response?.data?.message || "Could not end meeting.");
+      }
     }
+
+    leaveSocketMeeting();
+    navigate(`/rooms/${roomId}`, { replace: true });
   };
 
   const activeParticipants = participants.filter(
     (participant, index, list) => participant?.id && list.findIndex((item) => item.id === participant.id) === index
   );
+  const fallbackActiveParticipants =
+    meeting?.participants
+      ?.filter((participant) => !participant.leftAt && participant.user)
+      .map((participant) => participant.user) || [];
+  const visibleParticipants = activeParticipants.length ? activeParticipants : fallbackActiveParticipants;
   const typingNames = typingUsers.map((typingUser) => typingUser.name);
 
   return (
@@ -532,7 +539,7 @@ const MeetingDetails = () => {
               className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-soft transition hover:-translate-y-0.5 hover:bg-red-500 disabled:cursor-not-allowed disabled:bg-red-900"
             >
               <PhoneOff className="h-4 w-4" />
-              {isEnding ? "Leaving..." : "Leave meeting"}
+              {isEnding ? "Leaving..." : user?.role === "admin" || user?.role === "moderator" ? "End meeting" : "Leave meeting"}
             </button>
           </div>
         </header>
@@ -584,11 +591,11 @@ const MeetingDetails = () => {
                   Participants
                 </h2>
                 <span className="status-pill">
-                  {Math.max(activeParticipants.length, meeting?.participants?.length || 0)} total
+                  {visibleParticipants.length} total
                 </span>
               </div>
               <div className="mt-3 space-y-2">
-                {(activeParticipants.length ? activeParticipants : meeting?.participants?.map((item) => item.user) || []).map(
+                {visibleParticipants.map(
                   (participant) => (
                     <div key={participant.id} className="rounded-2xl border border-violet-100 bg-gradient-to-br from-white to-lavender-200/20 px-3 py-2 shadow-sm">
                       <p className="truncate text-sm font-medium text-slate-900">{participant.name}</p>

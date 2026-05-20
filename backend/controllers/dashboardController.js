@@ -37,6 +37,14 @@ const activityTrendActions = [
   "MEETING_STARTED",
 ];
 
+const safeAsync = async (operation, fallback) => {
+  try {
+    return await operation();
+  } catch {
+    return fallback;
+  }
+};
+
 const countMeetingsForExistingRooms = async (match = {}) => {
   const rows = await Meeting.aggregate([
     { $match: match },
@@ -102,9 +110,9 @@ const countActivityForExistingRooms = async (actions) => {
 const buildCurrentRoomActivityDistribution = async (currentRooms) => {
   const [meetingsStarted, invitationsAccepted, moderationCounts] =
     await Promise.all([
-      countMeetingsForExistingRooms(),
-      countInvitationsForExistingRooms({ status: "accepted" }),
-      countActivityForExistingRooms(roomModerationActions),
+      safeAsync(() => countMeetingsForExistingRooms({ status: { $in: ["active", "ended"] } }), 0),
+      safeAsync(() => countInvitationsForExistingRooms({ status: "accepted" }), 0),
+      safeAsync(() => countActivityForExistingRooms(roomModerationActions), {}),
     ]);
   const moderationDetails = [
     { name: roomActivityLabels.USER_MUTED, value: moderationCounts.USER_MUTED || 0 },
@@ -229,31 +237,43 @@ const getDashboardStats = async (req, res) => {
     trendStartDate.setUTCHours(0, 0, 0, 0);
     trendStartDate.setUTCDate(trendStartDate.getUTCDate() - (trendDays - 1));
 
-    const [
-      totalUsers,
-      totalRooms,
-      activeMeetings,
-      pendingInvitations,
-      recentActivity,
-    ] = await Promise.all([
-      User.countDocuments(),
-      Room.countDocuments(),
-      countMeetingsForExistingRooms({ status: "active" }),
-      countInvitationsForExistingRooms({ status: "pending" }),
-      populateActivity(
-        ActivityLog.find({ action: { $in: recentOperationalActions } })
-          .sort({ timestamp: -1, createdAt: -1 })
-          .limit(5)
-      ),
-    ]);
+    const [totalUsers, totalRooms, activeMeetings, pendingInvitations, recentActivity] =
+      await Promise.all([
+        safeAsync(() => User.countDocuments(), 0),
+        safeAsync(() => Room.countDocuments(), 0),
+        safeAsync(() => countMeetingsForExistingRooms({ status: "active" }), 0),
+        safeAsync(() => countInvitationsForExistingRooms({ status: "pending" }), 0),
+        safeAsync(
+          () =>
+            populateActivity(
+              ActivityLog.find({ action: { $in: recentOperationalActions } })
+                .sort({ timestamp: -1, createdAt: -1 })
+                .limit(5)
+            ),
+          []
+        ),
+      ]);
 
-    const analytics = await getDashboardAnalytics({
-      trendStartDate,
-      trendDays,
-      currentRooms: totalRooms,
-    });
+    const analytics = await safeAsync(
+      () =>
+        getDashboardAnalytics({
+          trendStartDate,
+          trendDays,
+          currentRooms: totalRooms,
+        }),
+      {
+        ...emptyAnalytics,
+        activityTrend: buildActivityTrend([], trendDays),
+      }
+    );
 
-    const { onlineUsersCount, activeCallsCount } = getPresenceStats();
+    const { onlineUsersCount, activeCallsCount } = await safeAsync(
+      () => Promise.resolve(getPresenceStats()),
+      { onlineUsersCount: 0, activeCallsCount: 0 }
+    );
+    const formattedRecentActivity = recentActivity
+      .map((activity) => safeAsync(() => Promise.resolve(formatActivity(activity)), null));
+    const resolvedRecentActivity = (await Promise.all(formattedRecentActivity)).filter(Boolean);
 
     res.json({
       totalUsers,
@@ -263,7 +283,7 @@ const getDashboardStats = async (req, res) => {
       pendingInvitations,
       onlineUsersCount,
       activeCallsCount,
-      recentActivity: recentActivity.map(formatActivity),
+      recentActivity: resolvedRecentActivity,
       analytics,
     });
   } catch (error) {

@@ -101,4 +101,26 @@ textarea {
   .floating-shape {
     @apply pointer-events-none absolute rounded-[2rem] border border-white/50 bg-white/35 shadow-glow backdrop-blur-2xl;
   }
+
+  .scroll-panel {
+    @apply overflow-y-auto pr-1;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(139, 124, 255, 0.45) rgba(255, 255, 255, 0.35);
+  }
+
+  .scroll-panel::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .scroll-panel::-webkit-scrollbar-track {
+    @apply rounded-full bg-white/40;
+  }
+
+  .scroll-panel::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-lavender-500/45;
+  }
+
+  .scroll-panel::-webkit-scrollbar-thumb:hover {
+    @apply bg-lavender-500/70;
+  }
 }

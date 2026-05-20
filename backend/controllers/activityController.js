@@ -105,7 +105,39 @@ const getRoomActivity = async (req, res) => {
   }
 };
 
+const clearRoomActivity = async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ message: "Valid room id is required." });
+    }
+
+    const room = await Room.findById(req.params.id)
+      .populate("members", "name email role")
+      .populate("assignedUsers", "name email role");
+
+    if (!room) {
+      return res.status(404).json({ message: "Room not found" });
+    }
+
+    const access = canAccessRoom(req.user, room);
+
+    if (!access.allowed) {
+      return res.status(403).json({ message: access.message });
+    }
+
+    await ActivityLog.deleteMany({ room: room._id });
+    req.app.get("io")?.to(`activity:room:${room._id.toString()}`).emit("room-activity-cleared", {
+      roomId: room._id.toString(),
+    });
+
+    res.json({ message: "Activity cleared successfully" });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to clear room activity", error: error.message });
+  }
+};
+
 module.exports = {
+  clearRoomActivity,
   getActivity,
   getRoomActivity,
 };

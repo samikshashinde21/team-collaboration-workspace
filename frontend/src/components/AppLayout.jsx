@@ -22,6 +22,7 @@ const AppLayout = () => {
   const { user, token, logout } = useAuth();
   const navigate = useNavigate();
   const [invitations, setInvitations] = useState([]);
+  const [meetingNotifications, setMeetingNotifications] = useState([]);
   const [unreadCounts, setUnreadCounts] = useState({ rooms: {}, meetings: {}, total: 0 });
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [notificationError, setNotificationError] = useState("");
@@ -98,6 +99,34 @@ const AppLayout = () => {
     socket.on("unread-counts-updated", (counts) => {
       setUnreadCounts(counts);
       window.dispatchEvent(new CustomEvent("unread-counts-updated", { detail: counts }));
+    });
+
+    socket.on("room-meeting-scheduled", ({ roomId, meeting }) => {
+      if (!roomId || !meeting) return;
+
+      setMeetingNotifications((currentNotifications) => [
+        { id: `${roomId}:${meeting.id}:scheduled`, type: "scheduled", roomId, meeting, createdAt: new Date().toISOString() },
+        ...currentNotifications.filter((notification) => notification.id !== `${roomId}:${meeting.id}:scheduled`),
+      ].slice(0, 5));
+      window.dispatchEvent(new CustomEvent("room-meeting-scheduled", { detail: { roomId, meeting } }));
+    });
+
+    socket.on("room-meeting-reminder", ({ roomId, meeting }) => {
+      if (!roomId || !meeting) return;
+
+      setMeetingNotifications((currentNotifications) => [
+        { id: `${roomId}:${meeting.id}:reminder`, type: "reminder", roomId, meeting, createdAt: new Date().toISOString() },
+        ...currentNotifications.filter((notification) => notification.id !== `${roomId}:${meeting.id}:reminder`),
+      ].slice(0, 5));
+      setIsNotificationsOpen(true);
+    });
+
+    socket.on("room-meeting-updated", ({ roomId, meeting }) => {
+      window.dispatchEvent(new CustomEvent("room-meeting-updated", { detail: { roomId, meeting } }));
+    });
+
+    socket.on("room-meeting-deleted", ({ roomId, meetingId }) => {
+      window.dispatchEvent(new CustomEvent("room-meeting-deleted", { detail: { roomId, meetingId } }));
     });
 
     return () => {
@@ -270,9 +299,9 @@ const AppLayout = () => {
                 aria-label="Notifications"
               >
                 <Bell className="h-5 w-5" />
-                {unreadInvitations.length > 0 && (
+                {unreadInvitations.length + meetingNotifications.length > 0 && (
                   <span className="absolute -right-1 -top-1 animate-pulseSoft rounded-full bg-mint-500 px-1.5 py-0.5 text-[10px] font-black text-navy-950">
-                    {unreadInvitations.length}
+                    {unreadInvitations.length + meetingNotifications.length}
                   </span>
                 )}
               </button>
@@ -280,9 +309,9 @@ const AppLayout = () => {
               {isNotificationsOpen && (
                 <div className="absolute right-0 z-50 mt-3 w-80 rounded-2xl border border-white/70 bg-white/90 p-4 shadow-lift backdrop-blur-2xl">
                   <div className="flex items-center justify-between gap-3">
-                    <h2 className="font-bold text-navy-900">Invitations</h2>
+                    <h2 className="font-bold text-navy-900">Notifications</h2>
                     <span className="status-pill">
-                      {unreadInvitations.length} unread
+                      {unreadInvitations.length + meetingNotifications.length} new
                     </span>
                   </div>
 
@@ -292,7 +321,36 @@ const AppLayout = () => {
                     </div>
                   )}
 
-                  <div className="mt-3 max-h-96 space-y-3 overflow-y-auto">
+                  <div className="scroll-panel mt-3 max-h-96 space-y-3">
+                    {meetingNotifications.map((notification) => (
+                      <button
+                        key={notification.id}
+                        type="button"
+                        onClick={() => {
+                          setMeetingNotifications((currentNotifications) =>
+                            currentNotifications.filter((item) => item.id !== notification.id)
+                          );
+                          setIsNotificationsOpen(false);
+                          navigate(`/rooms/${notification.roomId}?tab=meetings`);
+                        }}
+                        className="w-full rounded-2xl border border-mint-300/50 bg-mint-300/15 p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-soft"
+                      >
+                        <p className="truncate text-sm font-semibold text-slate-900">
+                          {notification.meeting.title}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {notification.type === "reminder"
+                            ? "Starts in 10 minutes. Please join on time."
+                            : "Scheduled meeting in this room"}
+                        </p>
+                        <time className="mt-2 block text-xs text-slate-500" dateTime={notification.meeting.scheduledFor}>
+                          {notification.meeting.scheduledFor
+                            ? formatInvitationTime(notification.meeting.scheduledFor)
+                            : formatInvitationTime(notification.createdAt)}
+                        </time>
+                      </button>
+                    ))}
+
                     {invitations.length ? (
                       invitations.map((invitation) => {
                         const isIncoming = invitation.invitedUser?.id === user?.id;

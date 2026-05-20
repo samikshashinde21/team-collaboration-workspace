@@ -4,6 +4,8 @@ import { Link, useNavigate } from "react-router-dom";
 import api from "../api/api";
 import { useAuth } from "../hooks/useAuth";
 
+const roomsPerPage = 6;
+
 const emptyRoomForm = {
   name: "",
   description: "",
@@ -35,6 +37,7 @@ const Rooms = () => {
   const [isCreating, setIsCreating] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [roomPendingDelete, setRoomPendingDelete] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
 
   const canCreateRoom = user?.role === "admin";
   const canDeleteRoom = user?.role === "admin";
@@ -45,6 +48,19 @@ const Rooms = () => {
     }),
     {}
   );
+  const totalPages = Math.max(Math.ceil(rooms.length / roomsPerPage), 1);
+  const paginatedRooms = rooms.slice((currentPage - 1) * roomsPerPage, currentPage * roomsPerPage);
+
+  const getMemberCount = (room) => {
+    const memberIds = new Set();
+
+    [...(room.members || []), room.createdBy].forEach((member) => {
+      const memberId = member?._id || member?.id || member;
+      if (memberId) memberIds.add(memberId.toString());
+    });
+
+    return memberIds.size;
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -57,6 +73,7 @@ const Rooms = () => {
 
         if (isMounted) {
           setRooms(roomsData);
+          setCurrentPage(1);
         }
       } catch (err) {
         if (isMounted) {
@@ -94,10 +111,42 @@ const Rooms = () => {
       setUnreadCounts(event.detail || { rooms: {}, meetings: {}, total: 0 });
     };
 
+    const handleMeetingUpdate = (event) => {
+      const { roomId, meeting } = event.detail || {};
+
+      if (!roomId || !meeting) return;
+
+      setRooms((currentRooms) =>
+        currentRooms.map((room) =>
+          room._id === roomId
+            ? { ...room, activeMeeting: meeting.status === "active" ? meeting : null }
+            : room
+        )
+      );
+    };
+
+    const handleMeetingDeleted = (event) => {
+      const { roomId, meetingId } = event.detail || {};
+
+      if (!roomId || !meetingId) return;
+
+      setRooms((currentRooms) =>
+        currentRooms.map((room) =>
+          room._id === roomId && room.activeMeeting?.id === meetingId
+            ? { ...room, activeMeeting: null }
+            : room
+        )
+      );
+    };
+
     window.addEventListener("unread-counts-updated", handleUnreadUpdate);
+    window.addEventListener("room-meeting-updated", handleMeetingUpdate);
+    window.addEventListener("room-meeting-deleted", handleMeetingDeleted);
 
     return () => {
       window.removeEventListener("unread-counts-updated", handleUnreadUpdate);
+      window.removeEventListener("room-meeting-updated", handleMeetingUpdate);
+      window.removeEventListener("room-meeting-deleted", handleMeetingDeleted);
     };
   }, []);
 
@@ -178,6 +227,7 @@ const Rooms = () => {
     try {
       const { data } = await api.post("/rooms", formData);
       setRooms([data, ...rooms]);
+      setCurrentPage(1);
       setFormData(emptyRoomForm);
       setIsCreateOpen(false);
     } catch (err) {
@@ -192,7 +242,9 @@ const Rooms = () => {
 
     try {
       await api.delete(`/rooms/${roomId}`);
-      setRooms(rooms.filter((room) => room._id !== roomId));
+      const nextRooms = rooms.filter((room) => room._id !== roomId);
+      setRooms(nextRooms);
+      setCurrentPage((page) => Math.min(page, Math.max(Math.ceil(nextRooms.length / roomsPerPage), 1)));
     } catch (err) {
       setError(err.response?.data?.message || "Could not delete room.");
     }
@@ -247,8 +299,9 @@ const Rooms = () => {
           No rooms yet.
         </div>
       ) : (
+        <>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {rooms.map((room) => {
+          {paginatedRooms.map((room) => {
             const isOpenRoom = room.isOpenToEveryone ?? !room.isPrivate;
             const unreadCount = unreadCounts.rooms?.[room._id] || 0;
 
@@ -263,6 +316,12 @@ const Rooms = () => {
                     <p className="mt-2 text-sm text-slate-600">{room.description || "No description"}</p>
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-2">
+                    {room.activeMeeting && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-black text-emerald-700 ring-4 ring-emerald-300/20">
+                        <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+                        LIVE
+                      </span>
+                    )}
                     {unreadCount > 0 && (
                       <span className="animate-pulseSoft rounded-full bg-mint-500 px-2 py-0.5 text-xs font-black text-navy-950">
                         {unreadCount} unread
@@ -289,21 +348,30 @@ const Rooms = () => {
                       <Users className="h-3.5 w-3.5" />
                       Members
                     </dt>
-                    <dd className="mt-1 font-medium text-slate-900">{room.members?.length || 0}</dd>
+                    <dd className="mt-1 font-medium text-slate-900">{getMemberCount(room)}</dd>
                   </div>
                 </dl>
+
+                {room.activeMeeting && (
+                  <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50/80 px-3 py-2 text-sm text-emerald-800">
+                    <p className="truncate font-black">Live now: {room.activeMeeting.title}</p>
+                    <p className="mt-1 text-xs">
+                      {room.activeMeeting.activeParticipantCount ?? room.activeMeeting.participantCount ?? 0} participants connected
+                    </p>
+                  </div>
+                )}
 
                 <div className="mt-5 flex flex-wrap gap-2">
                   <button
                     type="button"
-                    onClick={() => navigate(`/rooms/${room._id}`)}
+                    onClick={() => navigate(`/rooms/${room._id}?tab=chat`)}
                     className="btn-primary px-3"
                   >
                     <DoorOpen className="h-4 w-4" />
                     Join room
                   </button>
                   <Link
-                    to={`/rooms/${room._id}`}
+                    to={`/rooms/${room._id}?tab=activity`}
                     className="btn-secondary px-3"
                   >
                     View details
@@ -323,6 +391,33 @@ const Rooms = () => {
             );
           })}
         </div>
+        <div className="flex flex-col gap-3 rounded-2xl border border-white/70 bg-white/65 px-4 py-3 shadow-sm backdrop-blur sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm font-medium text-slate-600">
+            Showing {(currentPage - 1) * roomsPerPage + 1}-{Math.min(currentPage * roomsPerPage, rooms.length)} of {rooms.length} rooms
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setCurrentPage((page) => Math.max(page - 1, 1))}
+              disabled={currentPage === 1}
+              className="btn-secondary px-3 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Previous
+            </button>
+            <span className="status-pill">
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((page) => Math.min(page + 1, totalPages))}
+              disabled={currentPage === totalPages}
+              className="btn-secondary px-3 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+        </>
       )}
 
       {isCreateOpen && (

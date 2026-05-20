@@ -115,7 +115,7 @@ const ChatBox = ({ roomId, onOnlineUsersChange, onParticipantsChange }) => {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [roomId, token, onOnlineUsersChange, onParticipantsChange]);
+  }, [roomId, token, onOnlineUsersChange, onParticipantsChange, navigate, user?.id]);
 
   const handleChange = (event) => {
     setMessageText(event.target.value);
@@ -175,7 +175,7 @@ const ChatBox = ({ roomId, onOnlineUsersChange, onParticipantsChange }) => {
         </div>
       )}
 
-      <div className="mt-4 flex h-80 flex-col gap-3 overflow-y-auto rounded-2xl border border-white/70 bg-gradient-to-br from-white/70 to-lavender-200/20 p-3 shadow-inner">
+      <div className="scroll-panel mt-4 flex h-80 flex-col gap-3 rounded-2xl border border-white/70 bg-gradient-to-br from-white/70 to-lavender-200/20 p-3 shadow-inner">
         {messages.length === 0 ? (
           <div className="grid flex-1 place-items-center text-center text-sm text-slate-500">
             No messages yet.

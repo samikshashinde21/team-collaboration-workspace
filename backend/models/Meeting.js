@@ -26,22 +26,40 @@ const meetingSchema = new mongoose.Schema(
       ref: "Room",
       required: true,
     },
+    title: {
+      type: String,
+      trim: true,
+      default: "Room meeting",
+    },
+    description: {
+      type: String,
+      trim: true,
+      default: "",
+    },
     status: {
       type: String,
-      enum: ["active", "ended"],
+      enum: ["scheduled", "active", "ended"],
       default: "active",
       required: true,
     },
     startedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      default: null,
+    },
+    scheduledBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    scheduledFor: {
+      type: Date,
+      default: null,
     },
     participants: [meetingParticipantSchema],
     startedAt: {
       type: Date,
-      default: Date.now,
-      required: true,
+      default: null,
     },
     endedAt: {
       type: Date,

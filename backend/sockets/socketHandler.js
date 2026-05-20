@@ -38,6 +38,66 @@ const formatMeetingMessage = (message) => ({
   createdAt: message.createdAt,
 });
 
+const formatMeetingForRoom = (meeting) => {
+  const participants = meeting.participants || [];
+  const durationEnd = meeting.endedAt || new Date();
+  const durationMs =
+    meeting.status !== "scheduled" && meeting.startedAt
+      ? durationEnd.getTime() - meeting.startedAt.getTime()
+      : 0;
+
+  return {
+    id: meeting._id.toString(),
+    room: meeting.room?._id?.toString?.() || meeting.room?.toString?.(),
+    title: meeting.title || "Room meeting",
+    description: meeting.description || "",
+    status: meeting.status,
+    startedBy: meeting.startedBy
+      ? {
+          id: meeting.startedBy._id.toString(),
+          name: meeting.startedBy.name,
+          email: meeting.startedBy.email,
+          role: meeting.startedBy.role,
+        }
+      : null,
+    scheduledBy: meeting.scheduledBy
+      ? {
+          id: meeting.scheduledBy._id.toString(),
+          name: meeting.scheduledBy.name,
+          email: meeting.scheduledBy.email,
+          role: meeting.scheduledBy.role,
+        }
+      : null,
+    participants: participants.map((participant) => ({
+      user: participant.user
+        ? {
+            id: participant.user._id.toString(),
+            name: participant.user.name,
+            email: participant.user.email,
+            role: participant.user.role,
+          }
+        : null,
+      joinedAt: participant.joinedAt,
+      leftAt: participant.leftAt,
+    })),
+    participantCount: participants.length,
+    activeParticipantCount: participants.filter((participant) => !participant.leftAt).length,
+    durationMs: Math.max(durationMs, 0),
+    durationSeconds: Math.max(Math.floor(durationMs / 1000), 0),
+    scheduledFor: meeting.scheduledFor,
+    startedAt: meeting.startedAt,
+    endedAt: meeting.endedAt,
+    createdAt: meeting.createdAt,
+    updatedAt: meeting.updatedAt,
+  };
+};
+
+const populateMeetingForRoomUpdate = (query) =>
+  query
+    .populate("startedBy", "name email role")
+    .populate("scheduledBy", "name email role")
+    .populate("participants.user", "name email role");
+
 const getOnlineUsers = (roomId) => {
   const users = onlineUsersByRoom.get(roomId);
 
@@ -160,6 +220,32 @@ const getCallUsers = (channel) => {
 const getActiveMeetingViewerIds = (meetingId) =>
   new Set(getCallUsers(`meeting:${meetingId}`).map((user) => user.id));
 
+const emitRoomMeetingUpdate = async (io, roomId, meetingId) => {
+  if (!io || !roomId || !meetingId) return;
+
+  const [room, meeting] = await Promise.all([
+    Room.findById(roomId).select("members"),
+    populateMeetingForRoomUpdate(Meeting.findById(meetingId)),
+  ]);
+
+  if (!room || !meeting) return;
+
+  const formattedMeeting = formatMeetingForRoom(meeting);
+  const formattedRoomId = room._id.toString();
+
+  io.to(formattedRoomId).emit("room-meeting-updated", {
+    roomId: formattedRoomId,
+    meeting: formattedMeeting,
+  });
+
+  (room.members || []).forEach((member) => {
+    io.to(`user:${(member._id || member).toString()}`).emit("room-meeting-updated", {
+      roomId: formattedRoomId,
+      meeting: formattedMeeting,
+    });
+  });
+};
+
 const addMeetingParticipant = async (meetingId, userId) => {
   if (!meetingId) return;
 
@@ -207,6 +293,7 @@ const removeSocketFromCall = async (io, socket, callRoom) => {
 
     if (!stillPresent) {
       await markMeetingParticipantLeft(meetingId, socket.user._id);
+      await emitRoomMeetingUpdate(io, roomId, meetingId);
     }
   }
 
@@ -560,6 +647,7 @@ const socketHandler = (io) => {
         }
 
         await addMeetingParticipant(meetingId, socket.user._id);
+        await emitRoomMeetingUpdate(io, roomId, meetingId);
         await clearUnread({ io, userId: socket.user._id, roomId, meetingId });
       }
 

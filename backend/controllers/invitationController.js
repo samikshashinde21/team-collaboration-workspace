@@ -168,7 +168,8 @@ const updateInvitation = async (req, res) => {
     }
 
     if (invitation.status !== "pending") {
-      return res.status(400).json({ message: "This invitation has already been handled." });
+      const populatedInvitation = await populateInvitation(RoomInvitation.findById(invitation._id));
+      return res.json(formatInvitation(populatedInvitation));
     }
 
     invitation.status = status;
@@ -176,8 +177,14 @@ const updateInvitation = async (req, res) => {
     invitation.inviterRead = false;
     await invitation.save();
 
+    const room = await Room.findById(invitation.room);
+
+    if (!room) {
+      return res.status(404).json({ message: "Room not found." });
+    }
+
     if (status === "accepted") {
-      await Room.findByIdAndUpdate(invitation.room, {
+      await Room.findByIdAndUpdate(room._id, {
         $addToSet: { assignedUsers: req.user._id, members: req.user._id },
       });
     }
@@ -189,14 +196,17 @@ const updateInvitation = async (req, res) => {
     io
       ?.to(`user:${populatedInvitation.invitedBy._id.toString()}`)
       .emit("room-invitation-updated", formattedInvitation);
+    io
+      ?.to(`user:${populatedInvitation.invitedUser._id.toString()}`)
+      .emit("room-invitation-updated", formattedInvitation);
 
     await createActivityLog({
       io,
       actor: req.user._id,
       targetUser: populatedInvitation.invitedBy._id,
-      room: populatedInvitation.room._id,
+      room: room._id,
       action: status === "accepted" ? ACTIONS.INVITATION_ACCEPTED : ACTIONS.INVITATION_REJECTED,
-      description: `${req.user.name} ${status} the invitation to ${populatedInvitation.room.name}`,
+      description: `${req.user.name} ${status} the invitation to ${room.name}`,
     });
 
     res.json(formattedInvitation);

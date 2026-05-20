@@ -3,9 +3,10 @@ const Room = require("../models/Room");
 const RoomInvitation = require("../models/RoomInvitation");
 const Meeting = require("../models/Meeting");
 const User = require("../models/User");
-const { getRoomActivity } = require("./activityController");
+const { clearRoomActivity, getRoomActivity } = require("./activityController");
 const { canAccessRoom, validateRoomPermissions } = require("../services/roomAccess");
 const { ACTIONS, createActivityLog } = require("../services/activityLogger");
+const { onlineUsersByRoom } = require("../services/presenceStore");
 
 const formatInvitationNotification = (invitation) => ({
   id: invitation._id.toString(),
@@ -37,11 +38,16 @@ const formatInvitationNotification = (invitation) => ({
 const formatMeeting = (meeting) => {
   const participants = meeting.participants || [];
   const durationEnd = meeting.endedAt || new Date();
-  const durationMs = meeting.startedAt ? durationEnd.getTime() - meeting.startedAt.getTime() : 0;
+  const durationMs =
+    meeting.status !== "scheduled" && meeting.startedAt
+      ? durationEnd.getTime() - meeting.startedAt.getTime()
+      : 0;
 
   return {
     id: meeting._id.toString(),
     room: meeting.room?._id?.toString?.() || meeting.room?.toString?.(),
+    title: meeting.title || "Room meeting",
+    description: meeting.description || "",
     status: meeting.status,
     startedBy: meeting.startedBy
       ? {
@@ -49,6 +55,14 @@ const formatMeeting = (meeting) => {
           name: meeting.startedBy.name,
           email: meeting.startedBy.email,
           role: meeting.startedBy.role,
+        }
+      : null,
+    scheduledBy: meeting.scheduledBy
+      ? {
+          id: meeting.scheduledBy._id.toString(),
+          name: meeting.scheduledBy.name,
+          email: meeting.scheduledBy.email,
+          role: meeting.scheduledBy.role,
         }
       : null,
     participants: participants.map((participant) => ({
@@ -67,6 +81,7 @@ const formatMeeting = (meeting) => {
     activeParticipantCount: participants.filter((participant) => !participant.leftAt).length,
     durationMs: Math.max(durationMs, 0),
     durationSeconds: Math.max(Math.floor(durationMs / 1000), 0),
+    scheduledFor: meeting.scheduledFor,
     startedAt: meeting.startedAt,
     endedAt: meeting.endedAt,
     createdAt: meeting.createdAt,
@@ -77,6 +92,7 @@ const formatMeeting = (meeting) => {
 const populateMeeting = (query) =>
   query
     .populate("startedBy", "name email role")
+    .populate("scheduledBy", "name email role")
     .populate("participants.user", "name email role");
 
 const findAccessibleRoom = async (req, roomId) => {
@@ -99,6 +115,49 @@ const findAccessibleRoom = async (req, roomId) => {
   }
 
   return { room };
+};
+
+const emitRoomMeetingUpdate = (io, room, event, meeting) => {
+  if (!io || !room || !meeting) return;
+
+  const formattedMeeting = formatMeeting(meeting);
+  const roomId = room._id.toString();
+
+  io.to(roomId).emit(event, {
+    roomId,
+    meeting: formattedMeeting,
+  });
+
+  (room.members || []).forEach((member) => {
+    const memberId = (member._id || member).toString();
+    io.to(`user:${memberId}`).emit(event, {
+      roomId,
+      meeting: formattedMeeting,
+    });
+  });
+};
+
+const scheduleMeetingReminder = (io, room, meeting) => {
+  if (!io || !room || !meeting?.scheduledFor) return;
+
+  const reminderDelay = new Date(meeting.scheduledFor).getTime() - Date.now() - 10 * 60 * 1000;
+  const timer = setTimeout(async () => {
+    const currentMeeting = await populateMeeting(Meeting.findById(meeting._id));
+
+    if (!currentMeeting || currentMeeting.status !== "scheduled") return;
+
+    const formattedMeeting = formatMeeting(currentMeeting);
+    const roomId = room._id.toString();
+
+    (room.members || []).forEach((member) => {
+      io.to(`user:${(member._id || member).toString()}`).emit("room-meeting-reminder", {
+        roomId,
+        meeting: formattedMeeting,
+      });
+    });
+  }, Math.max(reminderDelay, 0));
+
+  timer.unref?.();
 };
 const createRoom = async (req, res) => {
   try {
@@ -213,7 +272,23 @@ const getRooms = async (req, res) => {
       .populate("assignedUsers", "name email role")
       .sort({ createdAt: -1 });
 
-    res.json(rooms.filter((room) => canAccessRoom(req.user, room).allowed));
+    const accessibleRooms = rooms.filter((room) => canAccessRoom(req.user, room).allowed);
+    const activeMeetings = await populateMeeting(
+      Meeting.find({ room: { $in: accessibleRooms.map((room) => room._id) }, status: "active" })
+    );
+    const activeMeetingByRoomId = new Map(
+      activeMeetings.map((meeting) => [meeting.room.toString(), formatMeeting(meeting)])
+    );
+
+    res.json(
+      accessibleRooms.map((room) => ({
+        ...room.toObject(),
+        activeMeeting: activeMeetingByRoomId.get(room._id.toString()) || null,
+        onlineParticipantsCount: new Set(
+          Array.from(onlineUsersByRoom.get(room._id.toString())?.values() || []).map((onlineUser) => onlineUser.id)
+        ).size,
+      }))
+    );
   } catch (error) {
     res.status(500).json({ message: "Failed to fetch rooms", error: error.message });
   }
@@ -287,21 +362,64 @@ const getRoomMeetings = async (req, res) => {
 
 const startMeeting = async (req, res) => {
   try {
+    if (req.user.role !== "admin" && req.user.role !== "moderator") {
+      return res.status(403).json({ message: "Only admins and moderators can start meetings." });
+    }
+
     const { room, error } = await findAccessibleRoom(req, req.params.id);
 
     if (error) {
       return res.status(error.status).json({ message: error.message });
     }
 
-    const meeting = await Meeting.create({
-      room: room._id,
-      status: "active",
-      startedBy: req.user._id,
-      participants: [{ user: req.user._id, joinedAt: new Date() }],
-      startedAt: new Date(),
-    });
+    const activeMeeting = await populateMeeting(
+      Meeting.findOne({ room: room._id, status: "active" })
+    );
+
+    if (activeMeeting) {
+      return res.status(409).json({
+        message: "A meeting is already active in this room.",
+        meeting: formatMeeting(activeMeeting),
+      });
+    }
+
+    const startedAt = new Date();
+    const { scheduledMeetingId } = req.body;
+    let meeting;
+
+    if (scheduledMeetingId) {
+      if (!mongoose.Types.ObjectId.isValid(scheduledMeetingId)) {
+        return res.status(400).json({ message: "Valid scheduled meeting id is required." });
+      }
+
+      meeting = await Meeting.findOneAndUpdate(
+        { _id: scheduledMeetingId, room: room._id, status: "scheduled" },
+        {
+          status: "active",
+          startedBy: req.user._id,
+          startedAt,
+          $addToSet: { participants: { user: req.user._id, joinedAt: startedAt } },
+        },
+        { new: true }
+      );
+
+      if (!meeting) {
+        return res.status(404).json({ message: "Scheduled meeting not found." });
+      }
+    } else {
+      meeting = await Meeting.create({
+        room: room._id,
+        title: req.body.title?.trim() || "Room meeting",
+        description: req.body.description?.trim() || "",
+        status: "active",
+        startedBy: req.user._id,
+        participants: [{ user: req.user._id, joinedAt: startedAt }],
+        startedAt,
+      });
+    }
 
     const populatedMeeting = await populateMeeting(Meeting.findById(meeting._id));
+    emitRoomMeetingUpdate(req.app.get("io"), room, "room-meeting-updated", populatedMeeting);
 
     await createActivityLog({
       io: req.app.get("io"),
@@ -309,12 +427,69 @@ const startMeeting = async (req, res) => {
       room: room._id,
       meeting: meeting._id,
       action: ACTIONS.MEETING_STARTED,
-      description: `${req.user.name} started a meeting in ${room.name}`,
+      description: `${req.user.name} started ${meeting.title || "a meeting"} in ${room.name}`,
     });
 
     res.status(201).json(formatMeeting(populatedMeeting));
   } catch (error) {
     res.status(500).json({ message: "Failed to start meeting", error: error.message });
+  }
+};
+
+const scheduleMeeting = async (req, res) => {
+  try {
+    if (req.user.role !== "admin" && req.user.role !== "moderator") {
+      return res.status(403).json({ message: "Only admins and moderators can schedule meetings." });
+    }
+
+    const { room, error } = await findAccessibleRoom(req, req.params.id);
+
+    if (error) {
+      return res.status(error.status).json({ message: error.message });
+    }
+
+    const { title, date, time, description = "" } = req.body;
+
+    if (!title?.trim()) {
+      return res.status(400).json({ message: "Meeting title is required." });
+    }
+
+    if (!date || !time) {
+      return res.status(400).json({ message: "Meeting date and time are required." });
+    }
+
+    const scheduledFor = new Date(`${date}T${time}`);
+
+    if (Number.isNaN(scheduledFor.getTime())) {
+      return res.status(400).json({ message: "Valid meeting date and time are required." });
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const scheduledDay = new Date(scheduledFor);
+    scheduledDay.setHours(0, 0, 0, 0);
+
+    if (scheduledDay < today) {
+      return res.status(400).json({ message: "Meetings can only be scheduled from today onward." });
+    }
+
+    const meeting = await Meeting.create({
+      room: room._id,
+      title: title.trim(),
+      description: description.trim(),
+      status: "scheduled",
+      scheduledBy: req.user._id,
+      scheduledFor,
+      participants: [],
+    });
+
+    const populatedMeeting = await populateMeeting(Meeting.findById(meeting._id));
+    emitRoomMeetingUpdate(req.app.get("io"), room, "room-meeting-scheduled", populatedMeeting);
+    scheduleMeetingReminder(req.app.get("io"), room, populatedMeeting);
+
+    res.status(201).json(formatMeeting(populatedMeeting));
+  } catch (error) {
+    res.status(500).json({ message: "Failed to schedule meeting", error: error.message });
   }
 };
 
@@ -342,6 +517,10 @@ const getMeetingById = async (req, res) => {
 
 const endMeeting = async (req, res) => {
   try {
+    if (req.user.role !== "admin" && req.user.role !== "moderator") {
+      return res.status(403).json({ message: "Only admins and moderators can end meetings." });
+    }
+
     const { room, error } = await findAccessibleRoom(req, req.params.id);
 
     if (error) {
@@ -372,6 +551,7 @@ const endMeeting = async (req, res) => {
       meetingId: meeting._id.toString(),
       meeting: formatMeeting(meeting),
     });
+    emitRoomMeetingUpdate(req.app.get("io"), room, "room-meeting-updated", meeting);
 
     await createActivityLog({
       io: req.app.get("io"),
@@ -387,13 +567,53 @@ const endMeeting = async (req, res) => {
     res.status(500).json({ message: "Failed to end meeting", error: error.message });
   }
 };
+
+const deleteMeeting = async (req, res) => {
+  try {
+    if (req.user.role !== "admin" && req.user.role !== "moderator") {
+      return res.status(403).json({ message: "Only admins and moderators can delete meetings." });
+    }
+
+    const { room, error } = await findAccessibleRoom(req, req.params.id);
+
+    if (error) {
+      return res.status(error.status).json({ message: error.message });
+    }
+
+    const meeting = await Meeting.findOne({ _id: req.params.meetingId, room: room._id });
+
+    if (!meeting) {
+      return res.status(404).json({ message: "Meeting not found" });
+    }
+
+    await meeting.deleteOne();
+
+    const roomId = room._id.toString();
+    const meetingId = req.params.meetingId;
+
+    req.app.get("io")?.to(roomId).emit("room-meeting-deleted", { roomId, meetingId });
+    (room.members || []).forEach((member) => {
+      req.app.get("io")?.to(`user:${(member._id || member).toString()}`).emit("room-meeting-deleted", {
+        roomId,
+        meetingId,
+      });
+    });
+
+    res.json({ message: "Meeting deleted successfully" });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to delete meeting", error: error.message });
+  }
+};
 module.exports = {
+  clearRoomActivity,
   createRoom,
+  deleteMeeting,
   getRooms,
   getRoomById,
   deleteRoom,
   getRoomActivity,
   getRoomMeetings,
+  scheduleMeeting,
   startMeeting,
   getMeetingById,
   endMeeting,
