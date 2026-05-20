@@ -70,7 +70,11 @@ const Login = () => {
       const { data } = await api.post("/auth/forgot-password", {
         email: normalizeEmail(forgotEmail),
       });
-      setForgotMessage(data.message || "If an account exists, password reset instructions will be sent.");
+      setForgotMessage(
+        data.resetUrl
+          ? `Reset link: ${data.resetUrl}`
+          : data.message || "If an account exists, password reset instructions will be sent."
+      );
     } catch (err) {
       setForgotError(err.response?.data?.message || "Could not process password reset request.");
     } finally {
@@ -177,7 +181,13 @@ const Login = () => {
             )}
             {forgotMessage && (
               <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-                {forgotMessage}
+                {forgotMessage.startsWith("Reset link: ") ? (
+                  <a href={forgotMessage.replace("Reset link: ", "")} className="break-all font-bold underline">
+                    {forgotMessage.replace("Reset link: ", "")}
+                  </a>
+                ) : (
+                  forgotMessage
+                )}
               </div>
             )}
 

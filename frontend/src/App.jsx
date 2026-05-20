@@ -10,6 +10,7 @@ import Invitations from "./pages/Invitations";
 import Login from "./pages/Login";
 import MeetingDetails from "./pages/MeetingDetails";
 import Register from "./pages/Register";
+import ResetPassword from "./pages/ResetPassword";
 import RoomDetails from "./pages/RoomDetails";
 import Rooms from "./pages/Rooms";
 import Users from "./pages/Users";
@@ -20,6 +21,7 @@ const App = () => {
       <Route element={<AuthLayout />}>
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/reset-password/:token" element={<ResetPassword />} />
       </Route>
 
       <Route element={<ProtectedRoute />}>

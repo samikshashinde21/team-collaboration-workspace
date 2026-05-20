@@ -1,4 +1,5 @@
 const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const { ACTIONS, createActivityLog } = require("../services/activityLogger");
@@ -17,6 +18,13 @@ const isStrongPassword = (password = "") =>
   password.length > 6 && /[A-Z]/.test(password) && /[a-z]/.test(password) && /\d/.test(password);
 
 const isValidEmail = (email = "") => emailPattern.test(normalizeEmail(email));
+
+const hashResetToken = (token) => crypto.createHash("sha256").update(token).digest("hex");
+
+const getResetBaseUrl = () =>
+  process.env.FRONTEND_URL ||
+  process.env.CLIENT_URL ||
+  "http://localhost:5173";
 
 const sendAuthResponse = (res, statusCode, user) => {
   const token = createToken(user._id);
@@ -129,19 +137,65 @@ const forgotPassword = async (req, res) => {
       return res.status(400).json({ message: "A valid email is required." });
     }
 
-    await User.findOne({ email: normalizedEmail }).select("_id");
+    const user = await User.findOne({ email: normalizedEmail });
+    let resetUrl = "";
+
+    if (user) {
+      const resetToken = crypto.randomBytes(32).toString("hex");
+      user.resetPasswordToken = hashResetToken(resetToken);
+      user.resetPasswordExpires = new Date(Date.now() + 30 * 60 * 1000);
+      await user.save();
+      resetUrl = `${getResetBaseUrl().replace(/\/$/, "")}/reset-password/${resetToken}`;
+    }
 
     return res.json({
       message:
         "If an account exists for this email, password reset instructions will be sent.",
+      resetUrl,
     });
   } catch (error) {
     return res.status(500).json({ message: "Password reset request failed", error: error.message });
   }
 };
 
+const resetPassword = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { password } = req.body;
+
+    if (!token) {
+      return res.status(400).json({ message: "Reset token is required." });
+    }
+
+    if (!isStrongPassword(password)) {
+      return res.status(400).json({
+        message: "Password must be more than 6 characters and include uppercase, lowercase, and a number.",
+      });
+    }
+
+    const user = await User.findOne({
+      resetPasswordToken: hashResetToken(token),
+      resetPasswordExpires: { $gt: new Date() },
+    });
+
+    if (!user) {
+      return res.status(400).json({ message: "Password reset link is invalid or expired." });
+    }
+
+    user.password = await bcrypt.hash(password, 10);
+    user.resetPasswordToken = "";
+    user.resetPasswordExpires = null;
+    await user.save();
+
+    return res.json({ message: "Password reset successfully. You can login now." });
+  } catch (error) {
+    return res.status(500).json({ message: "Password reset failed", error: error.message });
+  }
+};
+
 module.exports = {
   forgotPassword,
+  resetPassword,
   register,
   login,
 };
