@@ -120,14 +120,17 @@ const tabs = [
   { id: "activity", label: "Activity" },
 ];
 
-const ParticipantModerationMenu = ({ roomId, member, onRemoved }) => {
+const ParticipantModerationMenu = ({ roomId, member, onRemoved, onUpdated }) => {
   const socketRef = useRef(null);
   const menuRef = useRef(null);
   const { token } = useAuth();
   const [open, setOpen] = useState(false);
   const [isRemoveConfirmOpen, setIsRemoveConfirmOpen] = useState(false);
   const [isRemoving, setIsRemoving] = useState(false);
+  const [pendingAction, setPendingAction] = useState("");
   const [removeError, setRemoveError] = useState("");
+  const [actionError, setActionError] = useState("");
+  const targetUserId = member._id || member.id;
 
   useEffect(() => {
     if (!token) return;
@@ -161,13 +164,33 @@ const ParticipantModerationMenu = ({ roomId, member, onRemoved }) => {
 
   const emit = (event, payload) =>
     new Promise((resolve) => {
-      socketRef.current?.emit(event, payload, (response) => resolve(response));
+      if (!socketRef.current?.connected) {
+        resolve({ ok: false, message: "Moderation connection is not ready yet." });
+        return;
+      }
+
+      socketRef.current.emit(event, payload, (response) => resolve(response));
     });
+
+  const handleModerationAction = async (event, payload, actionLabel, nextState) => {
+    setPendingAction(actionLabel);
+    setActionError("");
+    const res = await emit(event, payload);
+    setPendingAction("");
+
+    if (!res?.ok) {
+      setActionError(res?.message || "Could not update participant controls.");
+      return;
+    }
+
+    setOpen(false);
+    onUpdated?.(targetUserId, nextState);
+  };
 
   const handleKick = async () => {
     setIsRemoving(true);
     setRemoveError("");
-    const res = await emit("kick-user", { roomId, targetUserId: member._id || member.id });
+    const res = await emit("kick-user", { roomId, targetUserId });
 
     if (!res?.ok) {
       setRemoveError(res?.message || "Could not remove user");
@@ -178,7 +201,7 @@ const ParticipantModerationMenu = ({ roomId, member, onRemoved }) => {
     setIsRemoving(false);
     setIsRemoveConfirmOpen(false);
     setOpen(false);
-    onRemoved?.(member._id || member.id);
+    onRemoved?.(targetUserId);
   };
 
   return (
@@ -186,21 +209,63 @@ const ParticipantModerationMenu = ({ roomId, member, onRemoved }) => {
       <div className="relative" ref={menuRef}>
         <button
           type="button"
-          onClick={() => setOpen((s) => !s)}
+          onClick={() => {
+            setActionError("");
+            setOpen((s) => !s);
+          }}
           className="rounded-md border border-slate-300 px-2 py-1 text-xs"
+          title="Participant controls"
         >
-          •••
+          ...
         </button>
         {open && (
-          <div className="absolute right-0 mt-2 w-48 rounded-md border bg-white shadow-md">
+          <div className="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded-md border border-slate-200 bg-white shadow-md">
+            {actionError && (
+              <div className="border-b border-red-100 bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+                {actionError}
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() =>
+                handleModerationAction(
+                  member.muted ? "unmute-user" : "mute-user",
+                  { roomId, targetUserId },
+                  "mute",
+                  { muted: !member.muted }
+                )
+              }
+              disabled={pendingAction === "mute"}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <MicOff className="h-4 w-4 text-amber-600" />
+              {member.muted ? "Unmute user" : "Mute user"}
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                handleModerationAction(
+                  "toggle-screen-share-permission",
+                  { roomId, targetUserId, allow: !!member.screenShareBlocked },
+                  "screen-share",
+                  { screenShareBlocked: !member.screenShareBlocked }
+                )
+              }
+              disabled={pendingAction === "screen-share"}
+              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <MonitorUp className="h-4 w-4 text-rose-600" />
+              {member.screenShareBlocked ? "Allow screen sharing" : "Block screen sharing"}
+            </button>
             <button
               type="button"
               onClick={() => {
                 setRemoveError("");
                 setIsRemoveConfirmOpen(true);
               }}
-              className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50"
+              className="flex w-full items-center gap-2 border-t border-slate-100 px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
             >
+              <Trash2 className="h-4 w-4" />
               Remove
             </button>
           </div>
@@ -1130,6 +1195,25 @@ const RoomDetails = () => {
                       <ParticipantModerationMenu
                         roomId={room._id}
                         member={member}
+                        onUpdated={(updatedMemberId, nextState) => {
+                          setRoom((currentRoom) =>
+                            currentRoom
+                              ? {
+                                  ...currentRoom,
+                                  members: (currentRoom.members || []).map((roomMember) =>
+                                    (roomMember._id || roomMember.id) === updatedMemberId
+                                      ? { ...roomMember, ...nextState }
+                                      : roomMember
+                                  ),
+                                  assignedUsers: (currentRoom.assignedUsers || []).map((assignedUser) =>
+                                    (assignedUser._id || assignedUser.id) === updatedMemberId
+                                      ? { ...assignedUser, ...nextState }
+                                      : assignedUser
+                                  ),
+                                }
+                              : currentRoom
+                          );
+                        }}
                         onRemoved={(removedMemberId) => {
                           setRoom((currentRoom) =>
                             currentRoom
