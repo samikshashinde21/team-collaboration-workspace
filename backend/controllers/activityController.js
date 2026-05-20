@@ -7,6 +7,8 @@ const { formatActivity, populateActivity } = require("../services/activityLogger
 const operationalActions = [
   "ROOM_CREATED",
   "ROOM_DELETED",
+  "ROOM_LOCKED",
+  "ROOM_UNLOCKED",
   "MEETING_STARTED",
   "MEETING_ENDED",
   "INVITATION_ACCEPTED",
@@ -23,7 +25,8 @@ const getAccessibleRoomIds = async (user) => {
   const rooms = await Room.find()
     .populate("members", "name email role")
     .populate("assignedUsers", "name email role")
-    .select("_id isOpenToEveryone members assignedUsers");
+    .populate("removedUsers", "name email role")
+    .select("_id isOpenToEveryone isLocked members assignedUsers removedUsers");
 
   return rooms.filter((room) => canAccessRoom(user, room).allowed).map((room) => room._id);
 };
@@ -56,7 +59,7 @@ const buildActivityQuery = async (req, baseQuery = {}) => {
     meetings: ["MEETING_STARTED", "MEETING_ENDED"],
     invitations: ["INVITATION_ACCEPTED", "INVITATION_REJECTED"],
     moderation: ["USER_MUTED", "USER_UNMUTED", "USER_KICKED", "SCREEN_SHARE_BLOCKED", "SCREEN_SHARE_ALLOWED"],
-    rooms: ["ROOM_CREATED", "ROOM_DELETED"],
+    rooms: ["ROOM_CREATED", "ROOM_DELETED", "ROOM_LOCKED", "ROOM_UNLOCKED"],
   };
 
   if (category && categoryActions[category]) {

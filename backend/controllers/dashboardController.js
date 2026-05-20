@@ -8,6 +8,7 @@ const { getPresenceStats } = require("../services/presenceStore");
 
 const roomActivityLabels = {
   CURRENT_ROOMS: "Current rooms",
+  ROOM_LOCKED: "Rooms locked",
   MEETING_STARTED: "Meetings started",
   INVITATION_ACCEPTED: "Invitations accepted",
   USER_MUTED: "Users muted",
@@ -26,6 +27,8 @@ const roomModerationActions = [
 const recentOperationalActions = [
   "ROOM_CREATED",
   "ROOM_DELETED",
+  "ROOM_LOCKED",
+  "ROOM_UNLOCKED",
   "INVITATION_ACCEPTED",
   "INVITATION_REJECTED",
   "MEETING_STARTED",

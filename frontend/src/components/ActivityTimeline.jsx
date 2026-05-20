@@ -4,6 +4,8 @@ const actionLabels = {
   USER_LOGIN: "logged in",
   ROOM_CREATED: "created a room",
   ROOM_DELETED: "deleted a room",
+  ROOM_LOCKED: "locked a room",
+  ROOM_UNLOCKED: "unlocked a room",
   ROOM_JOINED: "joined a room",
   ROOM_LEFT: "left a room",
   INVITATION_SENT: "sent an invitation",

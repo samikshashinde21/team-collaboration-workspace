@@ -34,6 +34,13 @@ const canAccessRoom = (user, room) => {
     };
   }
 
+  if (room.isLocked && !memberIds.includes(userId) && !assignedUserIds.includes(userId)) {
+    return {
+      allowed: false,
+      message: "Access denied. This room is locked.",
+    };
+  }
+
   if (room.isOpenToEveryone ?? !room.isPrivate) {
     return { allowed: true };
   }

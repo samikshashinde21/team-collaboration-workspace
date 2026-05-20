@@ -10,6 +10,7 @@ const {
   getRoomMeetings,
   scheduleMeeting,
   startMeeting,
+  updateRoomLock,
   getMeetingById,
   endMeeting,
 } = require("../controllers/roomController");
@@ -29,6 +30,7 @@ router.get("/:id/meetings/:meetingId", protect, getMeetingById);
 router.patch("/:id/meetings/:meetingId/end", protect, endMeeting);
 router.delete("/:id/meetings/:meetingId", protect, authorizeRoles("admin", "moderator"), deleteMeeting);
 router.get("/:id", protect, getRoomById);
+router.patch("/:id/lock", protect, authorizeRoles("admin", "moderator"), updateRoomLock);
 router.delete("/:id", protect, authorizeRoles("admin"), deleteRoom);
 
 module.exports = router;

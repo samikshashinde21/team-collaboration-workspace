@@ -16,6 +16,7 @@ const roomRoutes = require("./routes/roomRoutes");
 const unreadRoutes = require("./routes/unreadRoutes");
 const userRoutes = require("./routes/userRoutes");
 const socketHandler = require("./sockets/socketHandler");
+const sanitizeRequest = require("./middleware/sanitizeMiddleware");
 
 dotenv.config();
 connectDB();
@@ -49,6 +50,7 @@ app.use(
   })
 );
 app.use(helmet());
+app.use(sanitizeRequest);
 
 app.set("trust proxy", Number(process.env.TRUST_PROXY) || 1);
 

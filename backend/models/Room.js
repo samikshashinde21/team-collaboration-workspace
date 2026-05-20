@@ -16,6 +16,10 @@ const roomSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    isLocked: {
+      type: Boolean,
+      default: false,
+    },
     assignedUsers: [
       {
         type: mongoose.Schema.Types.ObjectId,

@@ -7,6 +7,7 @@ import {
   Clock3,
   DoorOpen,
   History,
+  Lock,
   MessageSquare,
   MicOff,
   MonitorUp,
@@ -276,6 +277,7 @@ const RoomDetails = () => {
   const [scheduleForm, setScheduleForm] = useState(emptyScheduleForm);
   const [scheduleError, setScheduleError] = useState("");
   const [isSchedulingMeeting, setIsSchedulingMeeting] = useState(false);
+  const [isUpdatingLock, setIsUpdatingLock] = useState(false);
   const [meetingToDelete, setMeetingToDelete] = useState(null);
   const [isClearActivityConfirmOpen, setIsClearActivityConfirmOpen] = useState(false);
   const [now, setNow] = useState(new Date());
@@ -284,6 +286,7 @@ const RoomDetails = () => {
 
   const canInvite = user?.role === "admin" || user?.role === "moderator";
   const canManageMeetings = user?.role === "admin" || user?.role === "moderator";
+  const canManageRoomLock = user?.role === "admin" || user?.role === "moderator";
   const canRemoveParticipant = (member) => {
     if (user?.role === "admin") {
       return user?.id !== (member._id || member.id);
@@ -431,6 +434,17 @@ const RoomDetails = () => {
       if (roomId === id) {
         setActivities([]);
       }
+    });
+    socket.on("room-lock-updated", ({ roomId, room: updatedRoom, isLocked }) => {
+      if (roomId !== id) {
+        return;
+      }
+
+      setRoom((currentRoom) => ({
+        ...(currentRoom || {}),
+        ...(updatedRoom || {}),
+        isLocked: Boolean(updatedRoom?.isLocked ?? isLocked),
+      }));
     });
 
     return () => {
@@ -719,6 +733,24 @@ const RoomDetails = () => {
     }
   };
 
+  const handleToggleRoomLock = async () => {
+    if (!canManageRoomLock || !room?._id) return;
+
+    setError("");
+    setIsUpdatingLock(true);
+
+    try {
+      const { data } = await api.patch(`/rooms/${room._id}/lock`, {
+        isLocked: !room.isLocked,
+      });
+      setRoom(data);
+    } catch (err) {
+      setError(err.response?.data?.message || "Could not update room lock.");
+    } finally {
+      setIsUpdatingLock(false);
+    }
+  };
+
   return (
     <section className="space-y-6">
       <Link to="/rooms" className="inline-flex items-center gap-2 text-sm font-bold text-navy-900 hover:text-lavender-500">
@@ -742,6 +774,12 @@ const RoomDetails = () => {
                 <DoorOpen className="h-3.5 w-3.5" />
                 {isOpenRoom ? "Open Room" : "Restricted Room"}
               </span>
+              {room.isLocked && (
+                <span className="status-pill bg-rose-100 text-rose-700">
+                  <Lock className="h-3.5 w-3.5" />
+                  Locked
+                </span>
+              )}
               {canInvite && (
                 <button
                   type="button"
@@ -750,6 +788,17 @@ const RoomDetails = () => {
                 >
                   <Send className="h-4 w-4" />
                   Invite Users
+                </button>
+              )}
+              {canManageRoomLock && (
+                <button
+                  type="button"
+                  onClick={handleToggleRoomLock}
+                  disabled={isUpdatingLock}
+                  className="btn-secondary py-1.5"
+                >
+                  {isUpdatingLock ? <Loader label="Updating lock" size="sm" /> : <Lock className="h-4 w-4" />}
+                  {room.isLocked ? "Unlock Room" : "Lock Room"}
                 </button>
               )}
             </div>

@@ -357,6 +357,59 @@ const deleteRoom = async (req, res) => {
   }
 };
 
+const updateRoomLock = async (req, res) => {
+  try {
+    const { room, error } = await findAccessibleRoom(req, req.params.id);
+
+    if (error) {
+      return res.status(error.status).json({ message: error.message });
+    }
+
+    if (req.user.role !== "admin" && req.user.role !== "moderator") {
+      return res.status(403).json({ message: "Only admins and moderators can lock rooms." });
+    }
+
+    const isLocked = Boolean(req.body.isLocked);
+    room.isLocked = isLocked;
+    await room.save();
+
+    const updatedRoom = await Room.findById(room._id)
+      .populate("createdBy", "name email role")
+      .populate("members", "name email role")
+      .populate("removedUsers", "name email role")
+      .populate("assignedUsers", "name email role");
+
+    const roomId = room._id.toString();
+    const io = req.app.get("io");
+
+    io?.to(roomId).emit("room-lock-updated", {
+      roomId,
+      isLocked,
+      room: updatedRoom,
+    });
+
+    (updatedRoom.members || []).forEach((member) => {
+      io?.to(`user:${(member._id || member).toString()}`).emit("room-lock-updated", {
+        roomId,
+        isLocked,
+        room: updatedRoom,
+      });
+    });
+
+    await createActivityLog({
+      io,
+      actor: req.user._id,
+      room: room._id,
+      action: isLocked ? ACTIONS.ROOM_LOCKED : ACTIONS.ROOM_UNLOCKED,
+      description: `${req.user.name} ${isLocked ? "locked" : "unlocked"} ${room.name}`,
+    });
+
+    res.json(updatedRoom);
+  } catch (error) {
+    res.status(500).json({ message: "Failed to update room lock", error: error.message });
+  }
+};
+
 
 const getRoomMeetings = async (req, res) => {
   try {
@@ -636,6 +689,7 @@ module.exports = {
   getRooms,
   getRoomById,
   deleteRoom,
+  updateRoomLock,
   getRoomActivity,
   getRoomMeetings,
   scheduleMeeting,

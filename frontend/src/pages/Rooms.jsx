@@ -336,6 +336,12 @@ const canCreateRoom = user?.role === "admin";
                       {isOpenRoom ? <DoorOpen className="h-3 w-3" /> : <Lock className="h-3 w-3" />}
                       {isOpenRoom ? "Open Room" : "Restricted Room"}
                     </span>
+                    {room.isLocked && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-1 text-xs font-bold text-rose-700">
+                        <Lock className="h-3 w-3" />
+                        Locked
+                      </span>
+                    )}
                   </div>
                 </div>
 

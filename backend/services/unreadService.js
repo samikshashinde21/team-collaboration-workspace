@@ -39,7 +39,7 @@ const getRoomRecipientIds = async (room, senderId) => {
   const sender = senderId.toString();
   const ids = new Set();
 
-  if (room.isOpenToEveryone ?? !room.isPrivate) {
+  if ((room.isOpenToEveryone ?? !room.isPrivate) && !room.isLocked) {
     const users = await User.find({ _id: { $ne: senderId } }).select("_id");
     users.forEach((user) => ids.add(user._id.toString()));
   } else {
