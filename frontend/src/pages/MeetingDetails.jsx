@@ -133,6 +133,13 @@ const MeetingDetails = () => {
     toastTimeoutsRef.current.set(id, timeout);
   }, []);
 
+  const attachMediaStream = useCallback((element, stream) => {
+    if (element && element.srcObject !== stream) {
+      element.srcObject = stream;
+      element.play?.().catch(() => {});
+    }
+  }, []);
+
   const emitMediaState = useCallback(
     (nextState = {}) => {
       socketRef.current?.emit("meeting-media-state", {
@@ -169,27 +176,17 @@ const MeetingDetails = () => {
   );
 
   useEffect(() => {
-    if (localVideoRef.current) {
-      localVideoRef.current.srcObject = localStream;
-    }
-  }, [localStream, isCameraOn]);
+    attachMediaStream(localVideoRef.current, localStream);
+  }, [attachMediaStream, localStream, isCameraOn]);
 
   useEffect(() => {
-    if (remoteVideoRef.current) {
-      remoteVideoRef.current.srcObject = remoteStream;
-    }
-
-    if (remoteAudioRef.current) {
-      remoteAudioRef.current.srcObject = remoteStream;
-      remoteAudioRef.current.play().catch(() => {});
-    }
-  }, [remoteStream]);
+    attachMediaStream(remoteVideoRef.current, remoteStream);
+    attachMediaStream(remoteAudioRef.current, remoteStream);
+  }, [attachMediaStream, remoteStream]);
 
   useEffect(() => {
-    if (screenVideoRef.current) {
-      screenVideoRef.current.srcObject = screenStream;
-    }
-  }, [screenStream]);
+    attachMediaStream(screenVideoRef.current, screenStream);
+  }, [attachMediaStream, screenStream]);
 
   useEffect(() => {
     if (sidePanel === "chat") {
@@ -998,19 +995,63 @@ const MeetingDetails = () => {
         : "Camera off";
 
     if (hasLocalScreen) {
-      return <video ref={screenVideoRef} autoPlay playsInline muted className="h-full w-full object-contain" />;
+      return (
+        <video
+          ref={(element) => {
+            screenVideoRef.current = element;
+            attachMediaStream(element, screenStream);
+          }}
+          autoPlay
+          playsInline
+          muted
+          className="h-full w-full object-contain"
+        />
+      );
     }
 
     if (presentationStage && hasRemoteFeed) {
-      return <video ref={remoteVideoRef} autoPlay playsInline muted className="h-full w-full object-contain" />;
+      return (
+        <video
+          ref={(element) => {
+            remoteVideoRef.current = element;
+            attachMediaStream(element, remoteStream);
+          }}
+          autoPlay
+          playsInline
+          muted
+          className="h-full w-full object-contain"
+        />
+      );
     }
 
     if (hasLocalVideo) {
-      return <video ref={localVideoRef} autoPlay playsInline muted className="h-full w-full object-cover" />;
+      return (
+        <video
+          ref={(element) => {
+            localVideoRef.current = element;
+            attachMediaStream(element, localStream);
+          }}
+          autoPlay
+          playsInline
+          muted
+          className="h-full w-full object-cover"
+        />
+      );
     }
 
     if (hasRemoteVideo) {
-      return <video ref={remoteVideoRef} autoPlay playsInline muted className="h-full w-full object-cover" />;
+      return (
+        <video
+          ref={(element) => {
+            remoteVideoRef.current = element;
+            attachMediaStream(element, remoteStream);
+          }}
+          autoPlay
+          playsInline
+          muted
+          className="h-full w-full object-cover"
+        />
+      );
     }
 
     return (
@@ -1102,7 +1143,14 @@ const MeetingDetails = () => {
 
   return (
     <section className="fixed inset-0 z-50 flex overflow-hidden bg-navy-950 text-white">
-      <audio ref={remoteAudioRef} autoPlay className="hidden" />
+      <audio
+        ref={(element) => {
+          remoteAudioRef.current = element;
+          attachMediaStream(element, remoteStream);
+        }}
+        autoPlay
+        className="hidden"
+      />
       <div className="pointer-events-none absolute inset-0 bg-soft-grid opacity-20 [background-size:36px_36px]" />
       <div className="relative z-10 flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-between gap-3 border-b border-white/10 bg-white/5 px-4 py-3 backdrop-blur-2xl md:px-5">
