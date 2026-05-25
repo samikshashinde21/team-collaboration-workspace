@@ -11,6 +11,32 @@ A full-stack collaboration platform for teams to manage rooms, meetings, invitat
 - Invitations, activity timeline, and unread counts
 - Admin dashboard for user management
 
+## Screenshots
+
+### Login Page
+![Login](./screenshots/login.png)
+
+### Register Page
+![Register](./screenshots/register.png)
+
+### Dashboard
+![Dashboard](./screenshots/dashboard.png)
+
+### Dashboard Overview
+![Dashboard 2](./screenshots/dashboard%202.png)
+
+### Room Workspace
+![Room](./screenshots/room.png)
+
+### Invitations
+![Invitations](./screenshots/invitations.png)
+
+### Live Meeting
+![Live Meeting](./screenshots/live%20meeting.png)
+
+### Meeting Details
+![Meeting](./screenshots/meeting%202.png)
+
 ## Tech Stack
 
 - Frontend: React, Vite, Tailwind CSS, Zustand, Axios, Socket.IO Client
